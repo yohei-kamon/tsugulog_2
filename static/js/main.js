@@ -34,7 +34,7 @@ async function toggleLike(postId) {
 }
 
 /**
- * 3. AI 姿勢解析 (究極安定化ロジック版)
+ * 3. AI 姿勢解析 (時間平均スコア算出版)
  */
 let aiActive = false;
 let isAnalyzed = false;
@@ -43,9 +43,13 @@ let poseData2 = [];
 let currentResults = null;
 let animationId = null;
 
-// スコア平滑化用のバッファ
-let scoreHistory = [];
-const SCORE_SMOOTHING_WINDOW = 8; // 直近8フレームの平均を表示
+// スコア計算用バッファ
+let scoreHistory = []; // スムージング用 (短期的)
+const SCORE_SMOOTHING_WINDOW = 8;
+
+// ★ 時間平均スコア用
+let totalScoreSum = 0;
+let scoreEvaluationCount = 0;
 
 function getDataIndexAtTime(data, time) {
     if (!data || data.length === 0) return -1;
@@ -137,25 +141,24 @@ async function initPoseDetection() {
             if (v2 && ctx2 && poseData2[idx]) {
                 const l2 = poseData2[idx].landmarks;
                 drawOnCanvas(c2, ctx2, l2);
-                comparePosesFinal(l1, l2, c2, ctx2);
+                comparePosesWithAverage(l1, l2, c2, ctx2);
             }
         }
         animationId = requestAnimationFrame(renderLoop);
     }
 
     /**
-     * 【究極安定化アルゴリズム】
+     * 時間平均を算出する比較ロジック
      */
-    function comparePosesFinal(l1, l2, canvas2, ctx2) {
-        // 部位別の重み付け (体幹は厳しく、末端はジッターを許容)
+    function comparePosesWithAverage(l1, l2, canvas2, ctx2) {
         const weights = {
-            11: 1.5, 12: 1.5, 23: 1.5, 24: 1.5, // 肩・腰 (安定)
-            13: 1.0, 14: 1.0, 25: 1.0, 26: 1.0, // 肘・膝
-            15: 0.7, 16: 0.7, 27: 0.7, 28: 0.7  // 手首・足首 (激しく揺れる)
+            11: 1.5, 12: 1.5, 23: 1.5, 24: 1.5,
+            13: 1.0, 14: 1.0, 25: 1.0, 26: 1.0,
+            15: 0.7, 16: 0.7, 27: 0.7, 28: 0.7 
         };
 
         const getCenter = (l) => ({ x: (l[11].x + l[12].x + l[23].x + l[24].x) / 4, y: (l[11].y + l[12].y + l[23].y + l[24].y) / 4 });
-        const getScale = (l) => Math.sqrt(Math.pow(l[11].x - l[24].x, 2) + Math.pow(l[11].y - l[24].y, 2)); // 対角線でスケール計算
+        const getScale = (l) => Math.sqrt(Math.pow(l[11].x - l[24].x, 2) + Math.pow(l[11].y - l[24].y, 2));
 
         const center1 = getCenter(l1);
         const center2 = getCenter(l2);
@@ -168,28 +171,21 @@ async function initPoseDetection() {
 
         let weightedErrorSum = 0;
         let weightTotal = 0;
-
-        // ノイズ許容閾値 (デッドゾーン)
         const NOISE_THRESHOLD = 0.015; 
 
         Object.keys(weights).forEach(id => {
             const i = parseInt(id);
             const w = weights[i];
-
-            // 正規化座標
             const n1 = { x: (l1[i].x - center1.x) / scale1, y: (l1[i].y - center1.y) / scale1 };
             const n2 = { x: (l2[i].x - center2.x) / scale2, y: (l2[i].y - center2.y) / scale2 };
-
             let dist = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
-
-            // --- デッドゾーン処理: 微小なズレはゼロとみなす ---
+            
             if (dist < NOISE_THRESHOLD) dist = 0;
-            else dist -= NOISE_THRESHOLD; // 閾値を超えた分だけをカウント
+            else dist -= NOISE_THRESHOLD;
 
             weightedErrorSum += dist * w;
             weightTotal += w;
 
-            // 描画
             const x1_p = (n1.x * scale2 + center2.x) * canvas2.width;
             const y1_p = (n1.y * scale2 + center2.y) * canvas2.height;
             ctx2.moveTo(x1_p, y1_p);
@@ -198,20 +194,27 @@ async function initPoseDetection() {
         ctx2.stroke();
 
         const avgError = weightedErrorSum / weightTotal;
-        const rawScore = Math.exp(-avgError * 12) * 100; // 感度を調整
+        const rawScore = Math.exp(-avgError * 12) * 100;
 
-        // --- スコアの移動平均 (Smoothing) ---
+        // 1. スムージング (表示用瞬時スコア)
         scoreHistory.push(rawScore);
         if (scoreHistory.length > SCORE_SMOOTHING_WINDOW) scoreHistory.shift();
-        const smoothedScore = Math.round(scoreHistory.reduce((a, b) => a + b) / scoreHistory.length);
+        const currentSmoothed = scoreHistory.reduce((a, b) => a + b) / scoreHistory.length;
+        const currentFinal = currentSmoothed > 98 ? 100 : Math.round(currentSmoothed);
 
-        // 同じ動画なら100%に固定するためのクランプ
-        const finalScore = smoothedScore > 98 ? 100 : smoothedScore;
+        document.getElementById('pose-sync-score').innerText = currentFinal;
 
-        const sc = document.getElementById('pose-sync-score');
-        if (sc) sc.innerText = finalScore;
+        // ★ 2. 時間平均の算出 (再生中のみ累計)
+        // 動画が止まっているときはカウントしない
+        const v1 = document.getElementById('video1');
+        if (v1 && !v1.paused) {
+            totalScoreSum += currentFinal;
+            scoreEvaluationCount++;
+            const overallAverage = Math.round(totalScoreSum / scoreEvaluationCount);
+            document.getElementById('pose-avg-score').innerText = overallAverage;
+        }
 
-        // 角度比較 (こちらはジッターの影響を受けにくい)
+        // 角度比較
         const calcA = (p1, p2, p3) => {
             const r = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
             let a = Math.abs(r * 180 / Math.PI);
@@ -233,10 +236,17 @@ async function initPoseDetection() {
 }
 
 function clearAllAnalysis() {
-    aiActive = false; isAnalyzed = false; poseData1 = []; poseData2 = []; scoreHistory = [];
+    aiActive = false; isAnalyzed = false; poseData1 = []; poseData2 = []; 
+    scoreHistory = [];
+    totalScoreSum = 0;         // 平均用リセット
+    scoreEvaluationCount = 0; // 平均用リセット
     if (animationId) cancelAnimationFrame(animationId);
     document.getElementById('toggleAI').innerHTML = '<i class="fa-solid fa-bolt"></i> AI Analyze';
     document.getElementById('stats-overlay').classList.add('d-none');
+    
+    // UIの数値をリセット
+    if(document.getElementById('pose-avg-score')) document.getElementById('pose-avg-score').innerText = "0";
+    
     const c1 = document.getElementById('canvas1'); const c2 = document.getElementById('canvas2');
     if (c1) c1.getContext('2d').clearRect(0, 0, c1.width, c1.height);
     if (c2) c2.getContext('2d').clearRect(0, 0, c2.width, c2.height);

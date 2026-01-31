@@ -1,0 +1,16 @@
+blinker==1.9.0
+click==8.3.1
+colorama==0.4.6
+dnspython==2.8.0
+email-validator==2.3.0
+Flask==3.1.2
+Flask-Login==0.6.3
+Flask-WTF==1.2.2
+idna==3.11
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+peewee==3.19.0
+pillow==12.1.0
+Werkzeug==3.1.5
+WTForms==3.2.1
