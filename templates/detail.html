@@ -2,8 +2,8 @@
 
 {% block content %}
 <!-- MediaPipe Libraries -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
 <div class="row justify-content-center">
     <div class="col-md-11 col-lg-10">
@@ -13,20 +13,20 @@
                 <div class="col-md-8 bg-black d-flex align-items-center justify-content-center position-relative" style="min-height: 450px;">
                     
                     {% if post.is_comparison %}
+                        <!-- 比較モード -->
                         <div class="comparison-container d-flex w-100 h-100 position-relative">
                             <!-- AI 解析・ステータスオーバーレイ -->
-                            <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-85 text-white rounded shadow-lg d-none" style="z-index: 10; width: 90%; max-width: 400px;">
+                            <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-90 text-white rounded shadow-lg d-none" style="z-index: 100; width: 90%; max-width: 400px;">
                                 
-                                <!-- 1. 高速解析進捗表示 -->
+                                <!-- 1. 解析進捗表示 -->
                                 <div id="analysis-progress-container">
                                     <div class="d-flex justify-content-between mb-1">
-                                        <span class="small">AI Fast Scanning...</span>
+                                        <span id="progress-label" class="small">Initializing AI...</span>
                                         <span id="progress-percent" class="small fw-bold">0%</span>
                                     </div>
                                     <div class="progress" style="height: 6px;">
                                         <div id="analysis-progress-bar" class="progress-bar bg-warning progress-bar-striped progress-bar-animated" style="width: 0%"></div>
                                     </div>
-                                    <div id="progress-label" class="text-center mt-1" style="font-size: 0.65rem; opacity: 0.8;">Optimizing data...</div>
                                 </div>
                                 
                                 <!-- 2. 解析完了後のスコア表示 -->
@@ -47,42 +47,59 @@
                             </div>
 
                             <div class="position-relative w-50 h-100 border-end border-secondary">
-                                <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" controls></video>
+                                <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                                 <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                             </div>
                             <div class="position-relative w-50 h-100">
-                                <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-100 h-100" crossorigin="anonymous" muted></video>
+                                <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-100 h-100" crossorigin="anonymous" playsinline muted></video>
                                 <canvas id="canvas2" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                             </div>
                         </div>
                     {% else %}
-                        <div class="position-relative w-100 h-100">
-                            <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" controls></video>
+                        <!-- 単体モード -->
+                        <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-90 text-white rounded shadow-lg d-none" style="z-index: 100; width: 90%; max-width: 400px;">
+                            <div id="analysis-progress-container">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span id="progress-label" class="small">Initializing AI...</span>
+                                    <span id="progress-percent" class="small fw-bold">0%</span>
+                                </div>
+                                <div class="progress" style="height: 6px;">
+                                    <div id="analysis-progress-bar" class="progress-bar bg-warning progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="position-relative w-100 h-100 text-center">
+                            <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                             <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                         </div>
                     {% endif %}
 
-                    <!-- AI切替ボタン -->
-                    <button id="toggleAI" class="btn btn-warning position-absolute bottom-0 end-0 m-3 shadow">
-                        <i class="fa-solid fa-bolt"></i> AI Analyze (Fast)
-                    </button>
+                    <!-- 操作ボタンエリア -->
+                    <div class="position-absolute bottom-0 end-0 m-3 d-flex gap-2" style="z-index: 101;">
+                        <button id="resetAI" class="btn btn-secondary shadow d-none">
+                            <i class="fa-solid fa-rotate-right"></i> Reset
+                        </button>
+                        <button id="toggleAI" class="btn btn-warning shadow">
+                            <i class="fa-solid fa-bolt"></i> AI Analyze
+                        </button>
+                    </div>
                 </div>
 
-                <!-- 情報・コメントセクション -->
-                <div class="col-md-4 d-flex flex-column bg-white">
+                <!-- 情報・コメントセクション (右側) -->
+                <div class="col-md-4 d-flex flex-column bg-white border-start">
                     <div class="p-3 border-bottom">
                         <div class="d-flex align-items-center mb-2">
                             <i class="fa-solid fa-circle-user fa-2x me-2 text-secondary"></i>
                             <strong class="text-dark">@{{ post.user.username }}</strong>
                         </div>
-                        <p class="mb-1 small text-secondary">{{ post.caption }}</p>
+                        <p class="mb-1 small">{{ post.caption }}</p>
                     </div>
 
                     <div class="p-3 flex-grow-1 overflow-auto" style="max-height: 400px; min-height: 250px;">
                         <h6 class="fw-bold mb-3 small">Comments</h6>
                         {% for comment in comments %}
                         <div class="mb-3 small">
-                            <span class="fw-bold">@{{ comment.user.username }}</span> {{ comment.content }}
+                            <strong>@{{ comment.user.username }}</strong> {{ comment.content }}
                         </div>
                         {% endfor %}
                     </div>
@@ -93,7 +110,7 @@
                                 {% set liked = current_user.likes.select().where(Like.post == post).exists() %}
                                 <i class="fa-heart fa-xl {{ 'fa-solid text-danger' if liked else 'fa-regular' }}"></i>
                             </button>
-                            <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> <small class="text-muted">likes</small>
+                            <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> likes
                         </div>
                         <form method="POST">
                             {{ form.hidden_tag() }}
