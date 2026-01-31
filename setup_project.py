@@ -56,7 +56,6 @@ def create_tables():
     with db:
         db.create_tables([User, Post, Like, Follow, Comment])
 """,
-
     "forms.py": """from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, TextAreaField, FileField, SelectField, BooleanField
 from wtforms.validators import DataRequired, Email, Length
@@ -77,7 +76,6 @@ class PostForm(FlaskForm):
     is_comparison = BooleanField('Comparison Mode')
     caption = TextAreaField('Caption', validators=[Length(max=500)])
 """,
-
     "app.py": """import os, uuid
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -182,7 +180,6 @@ if __name__ == '__main__':
     create_tables()
     app.run(port=8000, debug=True)
 """,
-
     "templates/base.html": """<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -218,7 +215,6 @@ if __name__ == '__main__':
 </body>
 </html>
 """,
-
     "templates/index.html": """{% extends "base.html" %}
 {% block content %}
 <div class="row justify-content-center">
@@ -256,7 +252,6 @@ if __name__ == '__main__':
 <input type="hidden" id="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
 {% endblock %}
 """,
-
     "templates/post.html": """{% extends "base.html" %}
 {% block content %}
 <div class="card mx-auto shadow-sm" style="max-width: 500px;">
@@ -289,7 +284,6 @@ if __name__ == '__main__':
 </div>
 {% endblock %}
 """,
-
     "templates/login.html": """{% extends "base.html" %}
 {% block content %}
 <div class="card mx-auto shadow-sm" style="max-width: 400px;">
@@ -308,7 +302,6 @@ if __name__ == '__main__':
 </div>
 {% endblock %}
 """,
-
     "templates/register.html": """{% extends "base.html" %}
 {% block content %}
 <div class="card mx-auto shadow-sm" style="max-width: 400px;">
@@ -328,7 +321,6 @@ if __name__ == '__main__':
 </div>
 {% endblock %}
 """,
-
     "static/js/main.js": """// 動画の同期再生
 document.querySelectorAll('.comparison-container').forEach(container => {
     const v1 = container.querySelector('.video-1');
@@ -363,14 +355,14 @@ async function toggleLike(postId) {
     }
 }
 """,
-
     ".gitignore": """tsugulog.db
 venv/
 __pycache__/
 static/uploads/*
 !static/uploads/.gitkeep
-"""
+""",
 }
+
 
 # ディレクトリとファイルの作成実行
 def setup():
@@ -378,7 +370,7 @@ def setup():
         dir_name = os.path.dirname(path)
         if dir_name and not os.path.exists(dir_name):
             os.makedirs(dir_name)
-        
+
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
             print(f"Created: {path}")
@@ -387,6 +379,7 @@ def setup():
     os.makedirs("static/uploads", exist_ok=True)
     with open("static/uploads/.gitkeep", "w") as f:
         pass
+
 
 if __name__ == "__main__":
     setup()
