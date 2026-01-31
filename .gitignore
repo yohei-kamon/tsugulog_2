@@ -1,1 +1,5 @@
-.venv
+tsugulog.db
+venv/
+__pycache__/
+static/uploads/*
+!static/uploads/.gitkeep

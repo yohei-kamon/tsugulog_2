@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        {% for post in posts %}
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-white py-3 border-0">
+                <strong>@{{ post.user.username }}</strong>
+            </div>
+            <div class="post-media bg-black text-center">
+                {% if post.is_comparison %}
+                <div class="comparison-container d-flex overflow-hidden">
+                    <video src="/static/uploads/{{ post.file_path }}" class="video-1 w-50 border-end border-secondary" controls></video>
+                    <video src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-50" muted></video>
+                </div>
+                {% elif post.content_type == 'photo' %}
+                <img src="/static/uploads/{{ post.file_path }}" class="img-fluid">
+                {% else %}
+                <video src="/static/uploads/{{ post.file_path }}" class="w-100" controls></video>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <button class="btn p-0 me-3" onclick="toggleLike({{ post.id }})" id="like-btn-{{ post.id }}">
+                        <i class="fa-heart fa-lg {% if post.id in liked_post_ids %}fa-solid text-danger{% else %}fa-regular{% endif %}"></i>
+                    </button>
+                    <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> likes
+                </div>
+                <p><strong>{{ post.user.username }}</strong> {{ post.caption }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<input type="hidden" id="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
+{% endblock %}
