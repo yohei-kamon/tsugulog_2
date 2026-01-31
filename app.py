@@ -5,7 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from PIL import Image
 from models import db, User, Post, Like, Follow, Comment, create_tables
-from forms import RegisterForm, LoginForm, PostForm
+from forms import RegisterForm, LoginForm, PostForm, CommentForm
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-secret-key"
@@ -18,6 +18,15 @@ login_manager.login_view = "login"
 @login_manager.user_loader
 def load_user(user_id):
     return User.get_or_none(User.id == int(user_id))
+
+
+# --- ここを追加 ---
+@app.context_processor
+def inject_models():
+    # テンプレート内で Like や Post などのクラスを直接参照できるようにする
+    from models import Like, Post
+    return dict(Like=Like, Post=Post)
+# ------------------
 
 
 def save_media(file, is_image=True):
@@ -103,6 +112,28 @@ def toggle_like(post_id):
     if not created:
         like.delete_instance()
     return jsonify({"liked": created, "count": post.likes.count()})
+
+
+# --- 既存のルートのあとに追加 ---
+
+
+@app.route("/post/<int:post_id>", methods=["GET", "POST"])
+@login_required
+def post_detail(post_id):
+    post = Post.get_or_none(Post.id == post_id)
+    if not post:
+        flash("Post not found.")
+        return redirect(url_for("index"))
+
+    form = CommentForm()
+    if form.validate_on_submit():
+        Comment.create(user=current_user, post=post, content=form.content.data)
+        return redirect(url_for("post_detail", post_id=post.id))
+
+    # コメント一覧を取得
+    comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
+
+    return render_template("detail.html", post=post, form=form, comments=comments)
 
 
 if __name__ == "__main__":

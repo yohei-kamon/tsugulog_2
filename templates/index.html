@@ -1,36 +1,93 @@
 {% extends "base.html" %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8 col-lg-6">
         {% for post in posts %}
         <div class="card mb-4 border-0 shadow-sm">
-            <div class="card-header bg-white py-3 border-0">
-                <strong>@{{ post.user.username }}</strong>
+            <!-- カードヘッダー: ユーザー名と詳細ページへのリンク -->
+            <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center">
+                    <i class="fa-solid fa-circle-user fa-lg me-2 text-secondary"></i>
+                    <strong class="text-dark">@{{ post.user.username }}</strong>
+                </div>
+                <a href="{{ url_for('post_detail', post_id=post.id) }}" class="btn btn-sm btn-light text-muted">
+                    <i class="fa-solid fa-ellipsis"></i> Details
+                </a>
             </div>
+
+            <!-- メディアセクション -->
             <div class="post-media bg-black text-center">
                 {% if post.is_comparison %}
-                <div class="comparison-container d-flex overflow-hidden">
-                    <video src="/static/uploads/{{ post.file_path }}" class="video-1 w-50 border-end border-secondary" controls></video>
-                    <video src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-50" muted></video>
-                </div>
+                    {# 比較動画モード #}
+                    <div class="comparison-container d-flex overflow-hidden">
+                        <video src="/static/uploads/{{ post.file_path }}" class="video-1 w-50 border-end border-secondary" controls></video>
+                        <video src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-50" muted></video>
+                    </div>
                 {% elif post.content_type == 'photo' %}
-                <img src="/static/uploads/{{ post.file_path }}" class="img-fluid">
+                    {# 通常写真: クリックで詳細へ #}
+                    <a href="{{ url_for('post_detail', post_id=post.id) }}">
+                        <img src="/static/uploads/{{ post.file_path }}" class="img-fluid w-100">
+                    </a>
                 {% else %}
-                <video src="/static/uploads/{{ post.file_path }}" class="w-100" controls></video>
+                    {# 通常動画 #}
+                    <video src="/static/uploads/{{ post.file_path }}" class="w-100" controls></video>
                 {% endif %}
             </div>
+
+            <!-- カードボディ: インタラクションとキャプション -->
             <div class="card-body">
-                <div class="mb-2">
+                <div class="d-flex align-items-center mb-2">
+                    <!-- いいねボタン (Ajax) -->
                     <button class="btn p-0 me-3" onclick="toggleLike({{ post.id }})" id="like-btn-{{ post.id }}">
-                        <i class="fa-heart fa-lg {% if post.id in liked_post_ids %}fa-solid text-danger{% else %}fa-regular{% endif %}"></i>
+                        {% set liked = current_user.likes.select().where(Like.post == post).exists() %}
+                        <i class="fa-heart fa-xl {{ 'fa-solid text-danger' if liked else 'fa-regular' }}"></i>
                     </button>
-                    <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> likes
+                    <!-- コメントアイコン (詳細ページへのショートカット) -->
+                    <a href="{{ url_for('post_detail', post_id=post.id) }}" class="btn p-0 text-dark">
+                        <i class="fa-regular fa-comment fa-xl"></i>
+                    </a>
                 </div>
-                <p><strong>{{ post.user.username }}</strong> {{ post.caption }}</p>
+
+                <!-- いいね件数 -->
+                <div class="mb-1">
+                    <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span>
+                    <span class="fw-bold">likes</span>
+                </div>
+
+                <!-- 投稿者とキャプション -->
+                <p class="mb-1">
+                    <span class="fw-bold">@{{ post.user.username }}</span>
+                    {{ post.caption }}
+                </p>
+
+                <!-- コメント確認リンク -->
+                {% set comment_count = post.comments.count() %}
+                {% if comment_count > 0 %}
+                <a href="{{ url_for('post_detail', post_id=post.id) }}" class="text-muted small text-decoration-none">
+                    View all {{ comment_count }} comments
+                </a>
+                {% endif %}
+
+                <!-- 投稿時間 -->
+                <div class="mt-2">
+                    <small class="text-muted text-uppercase" style="font-size: 0.7rem;">
+                        {{ post.created_at.strftime('%Y-%m-%d') }}
+                    </small>
+                </div>
             </div>
+        </div>
+        {% else %}
+        <!-- 投稿がない場合の表示 -->
+        <div class="text-center py-5">
+            <i class="fa-solid fa-camera-retro fa-3x text-muted mb-3"></i>
+            <p class="text-muted">No posts yet. Start following people!</p>
+            <a href="{{ url_for('create_post') }}" class="btn btn-primary btn-sm">Create First Post</a>
         </div>
         {% endfor %}
     </div>
 </div>
+
+<!-- CSRFトークン (Ajax通信に必要) -->
 <input type="hidden" id="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
 {% endblock %}
