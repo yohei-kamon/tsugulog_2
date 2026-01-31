@@ -1,49 +1,73 @@
 {% extends "base.html" %}
+
 {% block content %}
+<!-- MediaPipe 読み込み (このページでのみ使用) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+
 <div class="row justify-content-center">
-    <div class="col-md-10 col-lg-8">
+    <div class="col-md-11 col-lg-10">
         <div class="card border-0 shadow-sm overflow-hidden">
             <div class="row g-0">
-                <!-- メディアセクション (左側または上部) -->
-                <div class="col-md-7 bg-black d-flex align-items-center justify-content-center">
+                <!-- メディアセクション (左側) -->
+                <div class="col-md-8 bg-black d-flex align-items-center justify-content-center position-relative" style="min-height: 400px;">
+                    
                     {% if post.is_comparison %}
-                    <div class="comparison-container d-flex w-100">
-                        <video src="/static/uploads/{{ post.file_path }}" class="video-1 w-50 border-end border-secondary" controls></video>
-                        <video src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-50" muted></video>
-                    </div>
-                    {% elif post.content_type == 'photo' %}
-                    <img src="/static/uploads/{{ post.file_path }}" class="img-fluid">
+                        <!-- 比較モード -->
+                        <div class="comparison-container d-flex w-100 h-100 position-relative">
+                            <div class="position-relative w-50 h-100 border-end border-secondary">
+                                <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" controls></video>
+                                <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
+                            </div>
+                            <div class="position-relative w-50 h-100">
+                                <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-100 h-100" crossorigin="anonymous" muted></video>
+                                <canvas id="canvas2" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
+                            </div>
+                        </div>
                     {% else %}
-                    <video src="/static/uploads/{{ post.file_path }}" class="w-100" controls></video>
+                        <!-- 単体モード -->
+                        <div class="position-relative w-100 h-100">
+                            <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" controls></video>
+                            <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
+                        </div>
                     {% endif %}
+
+                    <!-- AI切替ボタン -->
+                    <button id="toggleAI" class="btn btn-warning position-absolute bottom-0 end-0 m-3 shadow">
+                        <i class="fa-solid fa-person-running"></i> AI Analyze ON
+                    </button>
                 </div>
 
-                <!-- 情報・コメントセクション (右側または下部) -->
-                <div class="col-md-5 d-flex flex-column bg-white">
+                <!-- 情報・コメントセクション (右側) -->
+                <div class="col-md-4 d-flex flex-column bg-white">
                     <div class="p-3 border-bottom">
-                        <strong>@{{ post.user.username }}</strong>
-                        <p class="mb-0 mt-2">{{ post.caption }}</p>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fa-solid fa-circle-user fa-2x me-2 text-secondary"></i>
+                            <strong class="text-dark">@{{ post.user.username }}</strong>
+                        </div>
+                        <p class="mb-1">{{ post.caption }}</p>
                         <small class="text-muted">{{ post.created_at.strftime('%Y/%m/%d %H:%M') }}</small>
                     </div>
 
-                    <!-- コメント表示エリア -->
-                    <div class="p-3 flex-grow-1 overflow-auto" style="max-height: 400px;">
-                        <h6>Comments</h6>
+                    <!-- コメントエリア -->
+                    <div class="p-3 flex-grow-1 overflow-auto" style="max-height: 450px; min-height: 200px;">
+                        <h6 class="fw-bold mb-3">Comments</h6>
                         {% for comment in comments %}
-                        <div class="mb-2 small">
-                            <strong>{{ comment.user.username }}</strong> {{ comment.content }}
-                            <div class="text-muted" style="font-size: 0.75rem;">{{ comment.created_at.strftime('%m/%d %H:%M') }}</div>
+                        <div class="mb-3 small">
+                            <strong>@{{ comment.user.username }}</strong> {{ comment.content }}
+                            <div class="text-muted" style="font-size: 0.7rem;">{{ comment.created_at.strftime('%m/%d %H:%M') }}</div>
                         </div>
                         {% else %}
                         <p class="text-muted small">No comments yet.</p>
                         {% endfor %}
                     </div>
 
-                    <!-- インタラクション・フォームエリア -->
+                    <!-- インタラクション -->
                     <div class="p-3 border-top mt-auto">
                         <div class="mb-3">
                             <button class="btn p-0 me-3" onclick="toggleLike({{ post.id }})" id="like-btn-{{ post.id }}">
-                                <i class="fa-heart fa-lg {% if current_user.likes.select().where(Like.post == post).exists() %}fa-solid text-danger{% else %}fa-regular{% endif %}"></i>
+                                {% set liked = current_user.likes.select().where(Like.post == post).exists() %}
+                                <i class="fa-heart fa-xl {{ 'fa-solid text-danger' if liked else 'fa-regular' }}"></i>
                             </button>
                             <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> likes
                         </div>
@@ -51,8 +75,8 @@
                         <form method="POST">
                             {{ form.hidden_tag() }}
                             <div class="input-group">
-                                {{ form.content(class="form-control form-control-sm", placeholder="Add a comment...", rows="1") }}
-                                <button class="btn btn-outline-primary btn-sm" type="submit">Post</button>
+                                {{ form.content(class="form-control form-control-sm", placeholder="Add a comment...") }}
+                                <button class="btn btn-primary btn-sm" type="submit">Post</button>
                             </div>
                         </form>
                     </div>
@@ -60,9 +84,10 @@
             </div>
         </div>
         <div class="mt-3">
-            <a href="{{ url_for('index') }}" class="text-decoration-none text-dark small"><i class="fa-solid fa-chevron-left"></i> Back to Feed</a>
+            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted small"><i class="fa-solid fa-chevron-left"></i> Back to Feed</a>
         </div>
     </div>
 </div>
+
 <input type="hidden" id="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
 {% endblock %}
