@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- MediaPipe Libraries -->
+<!-- MediaPipe 関連ライブラリの読み込み -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
@@ -9,16 +9,17 @@
     <div class="col-md-11 col-lg-10">
         <div class="card border-0 shadow-sm overflow-hidden">
             <div class="row g-0">
-                <!-- メディアセクション (左側) -->
-                <div class="col-md-8 bg-black d-flex align-items-center justify-content-center position-relative" style="min-height: 450px;">
+                <!-- 左側：メディア表示 & AI解析エリア -->
+                <div class="col-md-8 bg-black d-flex align-items-center justify-content-center position-relative" style="min-height: 500px;">
                     
                     {% if post.is_comparison %}
-                        <!-- 比較モード -->
+                        <!-- 比較モード表示 -->
                         <div class="comparison-container d-flex w-100 h-100 position-relative">
-                            <!-- AI 解析・ステータスオーバーレイ -->
-                            <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-90 text-white rounded shadow-lg d-none" style="z-index: 100; width: 90%; max-width: 400px;">
+                            
+                            <!-- AI 解析・統計情報オーバーレイ -->
+                            <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-90 text-white rounded shadow-lg d-none" style="z-index: 100; width: 95%; max-width: 450px;">
                                 
-                                <!-- 1. 解析進捗表示 -->
+                                <!-- 1. 解析進捗バー -->
                                 <div id="analysis-progress-container">
                                     <div class="d-flex justify-content-between mb-1">
                                         <span id="progress-label" class="small">Initializing AI...</span>
@@ -29,34 +30,40 @@
                                     </div>
                                 </div>
                                 
-                                <!-- 2. 解析完了後のスコア表示 -->
+                                <!-- 2. 解析完了後の統計データ -->
                                 <div id="stats-data" class="row text-center g-0 d-none">
-                                    <div class="col-4 border-end">
-                                        <div class="small opacity-75" style="font-size: 0.7rem;">Similarity</div>
-                                        <div class="fw-bold fs-5"><span id="pose-sync-score">0</span>%</div>
+                                    <div class="col-3 border-end">
+                                        <div class="small opacity-75" style="font-size: 0.65rem;">Current</div>
+                                        <div class="fw-bold text-info"><span id="pose-sync-score">0</span>%</div>
                                     </div>
-                                    <div class="col-4 border-end">
-                                        <div class="small opacity-75" style="font-size: 0.7rem;">Elbow Δ</div>
-                                        <div class="fw-bold fs-5"><span id="elbow-delta">0</span>°</div>
+                                    <div class="col-3 border-end">
+                                        <div class="small opacity-75" style="font-size: 0.65rem;">Avg Score</div>
+                                        <div class="fw-bold text-warning"><span id="pose-avg-score">0</span>%</div>
                                     </div>
-                                    <div class="col-4">
-                                        <div class="small opacity-75" style="font-size: 0.7rem;">Knee Δ</div>
-                                        <div class="fw-bold fs-5"><span id="knee-delta">0</span>°</div>
+                                    <div class="col-3 border-end">
+                                        <div class="small opacity-75" style="font-size: 0.65rem;">Elbow Δ</div>
+                                        <div class="fw-bold"><span id="elbow-delta">0</span>°</div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="small opacity-75" style="font-size: 0.65rem;">Knee Δ</div>
+                                        <div class="fw-bold"><span id="knee-delta">0</span>°</div>
                                     </div>
                                 </div>
                             </div>
 
+                            <!-- ビデオ・キャンバス1 (左) -->
                             <div class="position-relative w-50 h-100 border-end border-secondary">
                                 <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                                 <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                             </div>
+                            <!-- ビデオ・キャンバス2 (右) -->
                             <div class="position-relative w-50 h-100">
                                 <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-100 h-100" crossorigin="anonymous" playsinline muted></video>
                                 <canvas id="canvas2" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                             </div>
                         </div>
                     {% else %}
-                        <!-- 単体モード -->
+                        <!-- 単体投稿表示 -->
                         <div id="stats-overlay" class="position-absolute top-0 start-50 translate-middle-x mt-2 p-3 bg-dark bg-opacity-90 text-white rounded shadow-lg d-none" style="z-index: 100; width: 90%; max-width: 400px;">
                             <div id="analysis-progress-container">
                                 <div class="d-flex justify-content-between mb-1">
@@ -68,66 +75,74 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="position-relative w-100 h-100 text-center">
+                        <div class="position-relative w-100 h-100 d-flex align-items-center">
                             <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                             <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                         </div>
                     {% endif %}
 
-                    <!-- 操作ボタンエリア -->
+                    <!-- 右下：AI操作ボタン -->
                     <div class="position-absolute bottom-0 end-0 m-3 d-flex gap-2" style="z-index: 101;">
-                        <button id="resetAI" class="btn btn-secondary shadow d-none">
+                        <button id="resetAI" class="btn btn-sm btn-secondary shadow d-none">
                             <i class="fa-solid fa-rotate-right"></i> Reset
                         </button>
-                        <button id="toggleAI" class="btn btn-warning shadow">
+                        <button id="toggleAI" class="btn btn-sm btn-warning shadow">
                             <i class="fa-solid fa-bolt"></i> AI Analyze
                         </button>
                     </div>
                 </div>
 
-                <!-- 情報・コメントセクション (右側) -->
+                <!-- 右側：投稿情報 & コメントエリア -->
                 <div class="col-md-4 d-flex flex-column bg-white border-start">
                     <div class="p-3 border-bottom">
                         <div class="d-flex align-items-center mb-2">
-                            <i class="fa-solid fa-circle-user fa-2x me-2 text-secondary"></i>
                             <strong class="text-dark">@{{ post.user.username }}</strong>
                         </div>
-                        <p class="mb-1 small">{{ post.caption }}</p>
+                        <p class="mb-1 small text-dark">{{ post.caption }}</p>
+                        <small class="text-muted" style="font-size: 0.7rem;">{{ post.created_at.strftime('%Y/%m/%d %H:%M') }}</small>
                     </div>
 
                     <div class="p-3 flex-grow-1 overflow-auto" style="max-height: 400px; min-height: 250px;">
                         <h6 class="fw-bold mb-3 small">Comments</h6>
                         {% for comment in comments %}
-                        <div class="mb-3 small">
-                            <strong>@{{ comment.user.username }}</strong> {{ comment.content }}
+                        <div class="mb-3 small border-bottom pb-2">
+                            <span class="fw-bold">@{{ comment.user.username }}</span>
+                            <span class="text-dark d-block mt-1">{{ comment.content }}</span>
                         </div>
+                        {% else %}
+                        <p class="text-muted small text-center py-4">No comments yet.</p>
                         {% endfor %}
                     </div>
 
-                    <div class="p-3 border-top mt-auto">
-                        <div class="mb-3">
-                            <button class="btn p-0 me-3" onclick="toggleLike({{ post.id }})" id="like-btn-{{ post.id }}">
+                    <div class="p-3 border-top mt-auto bg-light bg-opacity-50">
+                        <div class="mb-3 d-flex align-items-center">
+                            <button class="btn p-0 me-3 border-0 bg-transparent" onclick="toggleLike({{ post.id }})" id="like-btn-{{ post.id }}">
                                 {% set liked = current_user.likes.select().where(Like.post == post).exists() %}
                                 <i class="fa-heart fa-xl {{ 'fa-solid text-danger' if liked else 'fa-regular' }}"></i>
                             </button>
-                            <span id="like-count-{{ post.id }}" class="fw-bold">{{ post.likes.count() }}</span> likes
+                            <span class="fw-bold small"><span id="like-count-{{ post.id }}">{{ post.likes.count() }}</span> likes</span>
                         </div>
+                        
                         <form method="POST">
                             {{ form.hidden_tag() }}
                             <div class="input-group">
                                 {{ form.content(class="form-control form-control-sm", placeholder="Add a comment...") }}
-                                <button class="btn btn-primary btn-sm" type="submit">Post</button>
+                                <button class="btn btn-primary btn-sm px-3" type="submit">Post</button>
                             </div>
                         </form>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div> <!-- row g-0 end -->
+        </div> <!-- card end -->
+        
         <div class="mt-3">
-            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted small"><i class="fa-solid fa-chevron-left"></i> Back to Feed</a>
+            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted small">
+                <i class="fa-solid fa-chevron-left me-1"></i> Back to Feed
+            </a>
         </div>
-    </div>
-</div>
+    </div> <!-- col-md-11 end -->
+</div> <!-- row justify-content-center end -->
 
+<!-- CSRFトークン -->
 <input type="hidden" id="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
 {% endblock %}
