@@ -15,7 +15,7 @@
                     </div>
 
                     <div class="mb-3 border p-3 rounded bg-light">
-                        <label class="form-label fw-bold">メインファイル (写真/動画)</label>
+                        <label class="form-label fw-bold">メインファイル</label>
                         {{ form.file1(class="form-control") }}
                     </div>
 
@@ -25,25 +25,33 @@
                     </div>
 
                     <div class="mb-4 border p-3 rounded bg-light">
-                        <label class="form-label fw-bold">比較用動画 (比較モード時のみ)</label>
+                        <label class="form-label fw-bold">比較用動画</label>
                         {{ form.file2(class="form-control") }}
                     </div>
 
+                    <!-- 入力項目エリア -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">キャプション</label>
-                        {{ form.caption(class="form-control", rows=3, placeholder="投稿の説明を入力...") }}
+                        {{ form.caption(class="form-control", rows=2) }}
                     </div>
 
-                    <!-- キャプション2を「検討した選択肢」として表示 -->
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label fw-bold text-primary">検討した選択肢</label>
-                        {{ form.caption_2(class="form-control", rows=3, placeholder="他に検討した内容や比較ポイントなど...") }}
+                        {{ form.caption_2(class="form-control", rows=2) }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-success">最終判断とその理由</label>
+                        {{ form.caption_3(class="form-control", rows=2) }}
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-danger">今回例外にした点</label>
+                        {{ form.caption_4(class="form-control", rows=2) }}
                     </div>
 
                     <div class="d-grid">
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="fa-solid fa-paper-plane me-2"></i>投稿する
-                        </button>
+                        <button type="submit" class="btn btn-primary btn-lg">投稿する</button>
                     </div>
                 </form>
             </div>

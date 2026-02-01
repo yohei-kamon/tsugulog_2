@@ -20,8 +20,10 @@ class Post(Model):
     content_type = CharField() # 'photo' or 'video'
     file_path = CharField()
     file_path_2 = CharField(null=True)
-    caption = TextField(null=True)   # これをキャプション1として使用
-    caption_2 = TextField(null=True) # 追加：キャプション2
+    caption = TextField(null=True)        # キャプション
+    caption_2 = TextField(null=True)      # 検討した選択肢
+    caption_3 = TextField(null=True)      # 最終判断とその理由 (追加)
+    caption_4 = TextField(null=True)      # 今回例外にした点 (追加)
     is_comparison = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.datetime.now)
 
