@@ -1,25 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- MediaPipe 関連ライブラリ (動画の場合のみ活用されます) -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<!-- MediaPipe 関連ライブラリ -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 
 <div class="row">
-    <!-- 左：メディア表示エリア -->
+    <!-- 左：メディア表示 & AI解析エリア -->
     <div class="col-lg-8">
         <div class="card bg-black border-0 overflow-hidden mb-3 shadow">
             
-            <!-- ヘッダー：静止画の場合はAI関連ボタンを非表示にする -->
             <div class="card-header bg-industrial-blue d-flex justify-content-between align-items-center py-2">
                 <span class="small fw-bold">
                     {% if post.content_type == 'photo' %}
-                        <i class="fa-solid fa-image me-2"></i>技術資料 プレビュー (静止画)
+                        <i class="fa-solid fa-image me-2"></i>技術資料 プレビュー
                     {% else %}
-                        <i class="fa-solid fa-robot me-2"></i>AI解析 プレビュー (動画)
+                        <i class="fa-solid fa-robot me-2"></i>AI解析 プレビュー
                     {% endif %}
                 </span>
                 
-                <!-- AI解析ボタンは動画（比較含む）の時のみ表示 -->
                 {% if post.content_type != 'photo' %}
                 <div class="d-flex gap-2">
                     <button id="resetAI" class="btn btn-xs btn-outline-light d-none py-0 px-2" style="font-size: 0.7rem;">リセット</button>
@@ -39,18 +37,20 @@
                                 <div class="progress" style="height: 4px;"><div id="analysis-progress-bar" class="progress-bar bg-warning" style="width: 0%"></div></div>
                             </div>
                         </div>
+                        <!-- 左動画: class="video-1" を追加 -->
                         <div class="w-50 h-100 border-end border-secondary position-relative">
-                            <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" playsinline controls></video>
+                            <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                             <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                         </div>
+                        <!-- 右動画: class="video-2" を追加 -->
                         <div class="w-50 h-100 position-relative">
-                            <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="w-100 h-100" crossorigin="anonymous" playsinline muted></video>
+                            <video id="video2" src="/static/uploads/{{ post.file_path_2 }}" class="video-2 w-100 h-100" crossorigin="anonymous" playsinline muted></video>
                             <canvas id="canvas2" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                         </div>
                     </div>
 
                 {% elif post.content_type == 'photo' %}
-                    <!-- 2. 単体画像表示 (AI解析なし・キャンバスも非表示) -->
+                    <!-- 2. 単体画像表示 -->
                     <div class="w-100 h-100 d-flex align-items-center justify-content-center bg-white">
                         <img src="/static/uploads/{{ post.file_path }}" class="img-fluid" style="max-height: 500px; width: auto;" alt="技術画像">
                     </div>
@@ -64,7 +64,7 @@
                                 <div class="progress" style="height: 4px;"><div id="analysis-progress-bar" class="progress-bar bg-warning" style="width: 0%"></div></div>
                             </div>
                         </div>
-                        <video id="video1" src="/static/uploads/{{ post.file_path }}" class="w-100 h-100" crossorigin="anonymous" playsinline controls></video>
+                        <video id="video1" src="/static/uploads/{{ post.file_path }}" class="video-1 w-100 h-100" crossorigin="anonymous" playsinline controls></video>
                         <canvas id="canvas1" class="position-absolute top-0 start-0 w-100 h-100" style="pointer-events: none;"></canvas>
                     </div>
                 {% endif %}
@@ -73,43 +73,38 @@
         </div>
     </div>
 
-    <!-- 右：技術詳細データエリア -->
+    <!-- 右：技術詳細データ -->
     <div class="col-lg-4">
         <div class="card mb-3 border-0 shadow-sm">
             <div class="card-body p-3">
                 <h6 class="fw-bold border-bottom pb-2 mb-3 small text-primary">
                     <i class="fa-solid fa-clipboard-check me-2"></i>技術詳細レポート
                 </h6>
-                
                 <div class="mb-3">
                     <label class="small text-muted fw-bold">キャプション</label>
-                    <p class="small bg-light p-2 rounded mb-0" style="white-space: pre-wrap; line-height: 1.6;">{{ post.caption }}</p>
+                    <p class="small bg-light p-2 rounded mb-0" style="white-space: pre-wrap;">{{ post.caption }}</p>
                 </div>
-
                 <div class="mb-3">
                     <label class="small text-muted fw-bold text-primary">検討した選択肢</label>
-                    <p class="small bg-light p-2 rounded mb-0 border-start border-primary border-3" style="white-space: pre-wrap; line-height: 1.6;">{{ post.caption_2 or "なし" }}</p>
+                    <p class="small bg-light p-2 rounded mb-0 border-start border-primary border-3" style="white-space: pre-wrap;">{{ post.caption_2 or "なし" }}</p>
                 </div>
-
                 <div class="mb-3">
                     <label class="small text-muted fw-bold text-success">最終判断とその理由</label>
-                    <p class="small bg-light p-2 rounded mb-0 border-start border-success border-3" style="white-space: pre-wrap; line-height: 1.6;">{{ post.caption_3 or "記録なし" }}</p>
+                    <p class="small bg-light p-2 rounded mb-0 border-start border-success border-3" style="white-space: pre-wrap;">{{ post.caption_3 or "記録なし" }}</p>
                 </div>
-
                 <div class="mb-0">
                     <label class="small text-muted fw-bold text-danger">今回例外にした点</label>
-                    <p class="small bg-light p-2 rounded mb-0 border-start border-danger border-3" style="white-space: pre-wrap; line-height: 1.6;">{{ post.caption_4 or "なし" }}</p>
+                    <p class="small bg-light p-2 rounded mb-0 border-start border-danger border-3" style="white-space: pre-wrap;">{{ post.caption_4 or "なし" }}</p>
                 </div>
             </div>
         </div>
 
-        <!-- 意見交換（コメント） -->
         <div class="card border-0 shadow-sm">
             <div class="card-body p-3">
                 <h6 class="fw-bold small mb-3">意見交換（コメント）</h6>
                 <div class="mb-3 overflow-auto" style="max-height: 200px;">
                     {% for comment in comments %}
-                    <div class="mb-2 p-2 bg-light rounded shadow-sm">
+                    <div class="mb-2 p-2 bg-light rounded">
                         <div class="fw-bold text-primary" style="font-size: 0.7rem;">@{{ comment.user.username }}</div>
                         <div class="small">{{ comment.content }}</div>
                     </div>
@@ -118,17 +113,11 @@
                 <form method="POST">
                     {{ form.hidden_tag() }}
                     <div class="input-group">
-                        {{ form.content(class="form-control form-control-sm", placeholder="技術的な質問や補足を入力...") }}
+                        {{ form.content(class="form-control form-control-sm", placeholder="補足や質問を入力...") }}
                         <button class="btn btn-primary btn-sm px-3" type="submit">送信</button>
                     </div>
                 </form>
             </div>
-        </div>
-
-        <div class="mt-3 text-center">
-            <a href="{{ url_for('index') }}" class="text-decoration-none text-muted small">
-                <i class="fa-solid fa-chevron-left me-1"></i> フィードに戻る
-            </a>
         </div>
     </div>
 </div>

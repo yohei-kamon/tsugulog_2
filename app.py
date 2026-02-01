@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from PIL import Image
 from models import db, User, Post, Like, Follow, Comment, create_tables
 from forms import RegisterForm, LoginForm, PostForm, CommentForm
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-secret-key"
@@ -137,6 +138,22 @@ def post_detail(post_id):
     comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
 
     return render_template("detail.html", post=post, form=form, comments=comments)
+
+
+# 既存のルートのあたりに追加、または修正
+@app.after_request
+def add_header(response):
+    # すべてのオリジンからのアクセスを許可（AI解析に必要）
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
+
+
+# staticファイルを返す際にCORSを付与する設定
+@app.route('/static/uploads/<path:filename>')
+def uploaded_file(filename):
+    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
 
 
 if __name__ == "__main__":
