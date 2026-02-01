@@ -19,7 +19,9 @@ class PostForm(FlaskForm):
     file1 = FileField("File 1", validators=[DataRequired()])
     file2 = FileField("File 2 (Optional for Comparison)")
     is_comparison = BooleanField("Comparison Mode")
-    caption = TextAreaField("Caption", validators=[Length(max=500)])
+    caption = TextAreaField('キャプション', validators=[Length(max=500)])
+    # caption_2 のラベルを「検討した選択肢」に変更
+    caption_2 = TextAreaField('検討した選択肢', validators=[Length(max=500)])
 
 
 # forms.py に追記

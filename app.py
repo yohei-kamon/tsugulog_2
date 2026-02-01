@@ -98,6 +98,7 @@ def create_post():
             file_path=file1,
             file_path_2=file2,
             caption=form.caption.data,
+            caption_2=form.caption_2.data, # 追加
             is_comparison=form.is_comparison.data,
         )
         return redirect(url_for("index"))

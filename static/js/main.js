@@ -34,7 +34,7 @@ async function toggleLike(postId) {
 }
 
 /**
- * 3. AI 姿勢解析 (時間平均スコア算出版)
+ * 3. AI 姿勢解析 (数値表示オフ・マーカー表示のみ)
  */
 let aiActive = false;
 let isAnalyzed = false;
@@ -42,14 +42,6 @@ let poseData1 = [];
 let poseData2 = [];
 let currentResults = null;
 let animationId = null;
-
-// スコア計算用バッファ
-let scoreHistory = []; // スムージング用 (短期的)
-const SCORE_SMOOTHING_WINDOW = 8;
-
-// ★ 時間平均スコア用
-let totalScoreSum = 0;
-let scoreEvaluationCount = 0;
 
 function getDataIndexAtTime(data, time) {
     if (!data || data.length === 0) return -1;
@@ -90,9 +82,11 @@ async function initPoseDetection() {
             isAnalyzed = true;
             toggleBtn.disabled = false;
             if (resetBtn) resetBtn.classList.remove('d-none');
+            
+            // 解析完了後は進捗コンテナを隠し、オーバーレイ自体を非表示にする（マーカーのみ見せるため）
             document.getElementById('analysis-progress-container').classList.add('d-none');
-            const statsData = document.getElementById('stats-data');
-            if (v2 && statsData) statsData.classList.remove('d-none');
+            document.getElementById('stats-overlay').classList.add('d-none');
+            
             toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> Show Pose';
         }
         aiActive = !aiActive;
@@ -141,87 +135,9 @@ async function initPoseDetection() {
             if (v2 && ctx2 && poseData2[idx]) {
                 const l2 = poseData2[idx].landmarks;
                 drawOnCanvas(c2, ctx2, l2);
-                comparePosesWithAverage(l1, l2, c2, ctx2);
             }
         }
         animationId = requestAnimationFrame(renderLoop);
-    }
-
-    /**
-     * 時間平均を算出する比較ロジック
-     */
-    function comparePosesWithAverage(l1, l2, canvas2, ctx2) {
-        const weights = {
-            11: 1.5, 12: 1.5, 23: 1.5, 24: 1.5,
-            13: 1.0, 14: 1.0, 25: 1.0, 26: 1.0,
-            15: 0.7, 16: 0.7, 27: 0.7, 28: 0.7 
-        };
-
-        const getCenter = (l) => ({ x: (l[11].x + l[12].x + l[23].x + l[24].x) / 4, y: (l[11].y + l[12].y + l[23].y + l[24].y) / 4 });
-        const getScale = (l) => Math.sqrt(Math.pow(l[11].x - l[24].x, 2) + Math.pow(l[11].y - l[24].y, 2));
-
-        const center1 = getCenter(l1);
-        const center2 = getCenter(l2);
-        const scale1 = getScale(l1);
-        const scale2 = getScale(l2);
-
-        ctx2.beginPath();
-        ctx2.strokeStyle = '#FFEB3B';
-        ctx2.lineWidth = 2;
-
-        let weightedErrorSum = 0;
-        let weightTotal = 0;
-        const NOISE_THRESHOLD = 0.015; 
-
-        Object.keys(weights).forEach(id => {
-            const i = parseInt(id);
-            const w = weights[i];
-            const n1 = { x: (l1[i].x - center1.x) / scale1, y: (l1[i].y - center1.y) / scale1 };
-            const n2 = { x: (l2[i].x - center2.x) / scale2, y: (l2[i].y - center2.y) / scale2 };
-            let dist = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
-            
-            if (dist < NOISE_THRESHOLD) dist = 0;
-            else dist -= NOISE_THRESHOLD;
-
-            weightedErrorSum += dist * w;
-            weightTotal += w;
-
-            const x1_p = (n1.x * scale2 + center2.x) * canvas2.width;
-            const y1_p = (n1.y * scale2 + center2.y) * canvas2.height;
-            ctx2.moveTo(x1_p, y1_p);
-            ctx2.lineTo(l2[i].x * canvas2.width, l2[i].y * canvas2.height);
-        });
-        ctx2.stroke();
-
-        const avgError = weightedErrorSum / weightTotal;
-        const rawScore = Math.exp(-avgError * 12) * 100;
-
-        // 1. スムージング (表示用瞬時スコア)
-        scoreHistory.push(rawScore);
-        if (scoreHistory.length > SCORE_SMOOTHING_WINDOW) scoreHistory.shift();
-        const currentSmoothed = scoreHistory.reduce((a, b) => a + b) / scoreHistory.length;
-        const currentFinal = currentSmoothed > 98 ? 100 : Math.round(currentSmoothed);
-
-        document.getElementById('pose-sync-score').innerText = currentFinal;
-
-        // ★ 2. 時間平均の算出 (再生中のみ累計)
-        // 動画が止まっているときはカウントしない
-        const v1 = document.getElementById('video1');
-        if (v1 && !v1.paused) {
-            totalScoreSum += currentFinal;
-            scoreEvaluationCount++;
-            const overallAverage = Math.round(totalScoreSum / scoreEvaluationCount);
-            document.getElementById('pose-avg-score').innerText = overallAverage;
-        }
-
-        // 角度比較
-        const calcA = (p1, p2, p3) => {
-            const r = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
-            let a = Math.abs(r * 180 / Math.PI);
-            return Math.round(a > 180 ? 360 - a : a);
-        };
-        document.getElementById('elbow-delta').innerText = Math.abs(calcA(l1[12], l1[14], l1[16]) - calcA(l2[12], l2[14], l2[16]));
-        document.getElementById('knee-delta').innerText = Math.abs(calcA(l1[24], l1[26], l1[28]) - calcA(l2[24], l2[26], l2[28]));
     }
 
     function drawOnCanvas(canvas, ctx, landmarks) {
@@ -236,17 +152,10 @@ async function initPoseDetection() {
 }
 
 function clearAllAnalysis() {
-    aiActive = false; isAnalyzed = false; poseData1 = []; poseData2 = []; 
-    scoreHistory = [];
-    totalScoreSum = 0;         // 平均用リセット
-    scoreEvaluationCount = 0; // 平均用リセット
+    aiActive = false; isAnalyzed = false; poseData1 = []; poseData2 = [];
     if (animationId) cancelAnimationFrame(animationId);
     document.getElementById('toggleAI').innerHTML = '<i class="fa-solid fa-bolt"></i> AI Analyze';
     document.getElementById('stats-overlay').classList.add('d-none');
-    
-    // UIの数値をリセット
-    if(document.getElementById('pose-avg-score')) document.getElementById('pose-avg-score').innerText = "0";
-    
     const c1 = document.getElementById('canvas1'); const c2 = document.getElementById('canvas2');
     if (c1) c1.getContext('2d').clearRect(0, 0, c1.width, c1.height);
     if (c2) c2.getContext('2d').clearRect(0, 0, c2.width, c2.height);

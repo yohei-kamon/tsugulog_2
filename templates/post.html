@@ -1,31 +1,53 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card mx-auto shadow-sm" style="max-width: 500px;">
-    <div class="card-body">
-        <h5 class="card-title mb-4">Create New Post</h5>
-        <form method="POST" enctype="multipart/form-data">
-            {{ form.hidden_tag() }}
-            <div class="mb-3">
-                {{ form.content_type.label(class="form-label") }}
-                {{ form.content_type(class="form-select") }}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4 fw-bold"><i class="fa-solid fa-square-plus me-2"></i>新規投稿</h5>
+                
+                <form method="POST" enctype="multipart/form-data">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">コンテンツタイプ</label>
+                        {{ form.content_type(class="form-select") }}
+                    </div>
+
+                    <div class="mb-3 border p-3 rounded bg-light">
+                        <label class="form-label fw-bold">メインファイル (写真/動画)</label>
+                        {{ form.file1(class="form-control") }}
+                    </div>
+
+                    <div class="mb-3 form-check form-switch">
+                        {{ form.is_comparison(class="form-check-input", id="isComparisonCheck") }}
+                        <label class="form-check-label fw-bold" for="isComparisonCheck">動画比較モードを有効にする</label>
+                    </div>
+
+                    <div class="mb-4 border p-3 rounded bg-light">
+                        <label class="form-label fw-bold">比較用動画 (比較モード時のみ)</label>
+                        {{ form.file2(class="form-control") }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">キャプション</label>
+                        {{ form.caption(class="form-control", rows=3, placeholder="投稿の説明を入力...") }}
+                    </div>
+
+                    <!-- キャプション2を「検討した選択肢」として表示 -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-primary">検討した選択肢</label>
+                        {{ form.caption_2(class="form-control", rows=3, placeholder="他に検討した内容や比較ポイントなど...") }}
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fa-solid fa-paper-plane me-2"></i>投稿する
+                        </button>
+                    </div>
+                </form>
             </div>
-            <div class="mb-3">
-                {{ form.file1.label(class="form-label") }}
-                {{ form.file1(class="form-control") }}
-            </div>
-            <div class="mb-3">
-                <label class="form-check-label">{{ form.is_comparison() }} Comparison Mode (Upload 2nd file)</label>
-            </div>
-            <div class="mb-3">
-                {{ form.file2.label(class="form-label") }}
-                {{ form.file2(class="form-control") }}
-            </div>
-            <div class="mb-3">
-                {{ form.caption.label(class="form-label") }}
-                {{ form.caption(class="form-control", rows=3) }}
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Post</button>
-        </form>
+        </div>
     </div>
 </div>
 {% endblock %}
