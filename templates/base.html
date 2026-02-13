@@ -3,32 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TsuguLog | 製造技術承継</title>
+    <title>TsuguLog | 製造技術承継プラットフォーム</title>
+    
+    <!-- Bootstrap 5.3 CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome 6.x CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MediaPipe Tasks Vision API (最新版) -->
+<!-- base.html の該当箇所を修正 -->
+
+<!-- 1. MediaPipeの直読み込みタグは削除します（main.js内でimportするため） -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/..."></script> ←削除 -->
+
+<!-- 2. main.js を type="module" として読み込む -->
+    <script type="module" src="/static/js/main.js"></script>
     <style>
-        body { background-color: #F3F2EF; font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #000000e6; }
-        .navbar { border-bottom: 1px solid #e0e0e0; background-color: #fff !important; }
-        .navbar-brand { color: #004182 !important; font-weight: 800; }
-        .card { border: none; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,0.08); margin-bottom: 12px; }
-        .btn-primary { background-color: #004182; border: none; border-radius: 20px; font-weight: 600; padding: 6px 16px; }
+        /* LinkedIn風 プロフェッショナル・インダストリアルデザイン */
+        :root {
+            --industrial-blue: #004182;
+            --linkedin-bg: #F3F2EF;
+            --text-main: #000000e6;
+            --text-sub: #00000099;
+            --border-color: #e0e0e0;
+        }
+
+        body { 
+            background-color: var(--linkedin-bg); 
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            color: var(--text-main);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ナビゲーションバー */
+        .navbar { 
+            border-bottom: 1px solid var(--border-color); 
+            background-color: #fff !important; 
+            padding: 0.5rem 0;
+        }
+        .navbar-brand { 
+            color: var(--industrial-blue) !important; 
+            font-weight: 800; 
+            font-size: 1.5rem;
+            letter-spacing: -0.5px;
+        }
+        
+        /* カードデザイン */
+        .card { 
+            border: none; 
+            border-radius: 8px; 
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.08); 
+            margin-bottom: 12px; 
+            background-color: #fff;
+        }
+
+        /* ボタン */
+        .btn-primary { 
+            background-color: var(--industrial-blue); 
+            border: none; 
+            border-radius: 20px; 
+            font-weight: 600; 
+            padding: 6px 18px;
+            transition: background-color 0.2s;
+        }
         .btn-primary:hover { background-color: #003366; }
-        .btn-warning { border-radius: 20px; font-weight: 600; color: #333; }
-        .btn-outline-secondary { border-radius: 20px; font-weight: 600; font-size: 0.85rem; }
-        .bg-industrial-blue { background-color: #004182; color: white; }
-        .nav-link { color: #00000099; font-weight: 600; font-size: 0.9rem; }
-        .nav-link:hover { color: #000000e6; }
+        
+        .btn-outline-secondary { 
+            border-radius: 20px; 
+            font-weight: 600; 
+            font-size: 0.85rem; 
+            border-color: var(--border-color);
+            color: var(--text-sub);
+        }
+
+        .btn-warning { 
+            border-radius: 20px; 
+            font-weight: 600; 
+            color: #333; 
+            background-color: #ffb81c;
+            border: none;
+        }
+
+        /* ユーティリティ */
+        .nav-link { 
+            color: var(--text-sub); 
+            font-weight: 600; 
+            font-size: 0.9rem; 
+        }
+        .nav-link:hover { color: var(--text-main); }
+        .bg-industrial-blue { background-color: var(--industrial-blue); color: white; }
+        
+        /* ドロップダウン */
+        .dropdown-menu {
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
+    <!-- ナビゲーションバー -->
     <nav class="navbar navbar-expand-lg sticky-top mb-4">
         <div class="container">
-            <!-- ロゴ -->
             <a class="navbar-brand d-flex align-items-center" href="/">
                 <i class="fa-solid fa-microchip me-2"></i>TsuguLog
             </a>
 
-            <!-- モバイル用トグル -->
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -36,27 +116,31 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto align-items-center">
                     {% if current_user.is_authenticated %}
-                        <!-- 修正：暗黙知データベース(工事中) ボタン -->
+                        <!-- 開発中機能 -->
                         <li class="nav-item me-3">
                             <a class="btn btn-outline-secondary btn-sm disabled" href="#" tabindex="-1" aria-disabled="true">
                                 <i class="fa-solid fa-brain me-1"></i> 暗黙知データベース(工事中)
                             </a>
                         </li>
 
-                        <!-- 技術を記録 ボタン -->
+                        <!-- アクションボタン -->
                         <li class="nav-item me-3">
                             <a href="{{ url_for('create_post') }}" class="btn btn-primary btn-sm">
                                 <i class="fa-solid fa-plus me-1"></i> 技術を記録
                             </a>
                         </li>
 
-                        <!-- ユーザーメニュー -->
+                        <!-- ユーザープロフメニュー -->
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="fa-solid fa-circle-user fa-lg me-1"></i> @{{ current_user.username }}
+                            <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown">
+                                <i class="fa-solid fa-circle-user fa-lg me-1 text-secondary"></i>
+                                <span>@{{ current_user.username }}</span>
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="navbarDropdown">
-                                <li><a class="dropdown-item small" href="{{ url_for('logout') }}"><i class="fa-solid fa-right-from-bracket me-2"></i>ログアウト</a></li>
+                            <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                                <li><div class="dropdown-header small fw-bold text-uppercase">アカウント設定</div></li>
+                                <li><a class="dropdown-item small" href="{{ url_for('logout') }}">
+                                    <i class="fa-solid fa-right-from-bracket me-2 text-muted"></i>ログアウト
+                                </a></li>
                             </ul>
                         </li>
                     {% else %}
@@ -64,7 +148,7 @@
                             <a class="nav-link" href="{{ url_for('login') }}">ログイン</a>
                         </li>
                         <li class="nav-item">
-                            <a class="btn btn-outline-primary btn-sm ms-2" href="{{ url_for('register') }}">新規登録</a>
+                            <a class="btn btn-outline-primary btn-sm ms-2" style="border-radius: 20px;" href="{{ url_for('register') }}">新規登録</a>
                         </li>
                     {% endif %}
                 </ul>
@@ -72,11 +156,16 @@
         </div>
     </nav>
 
+    <!-- メインコンテンツ -->
     <div class="container">
         {% block content %}{% endblock %}
     </div>
 
+    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/main.js"></script>
+    
+    <!-- アプリケーション共通JavaScript -->
+    <!-- 修正後：type="module" を必ず追加 -->
+    <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

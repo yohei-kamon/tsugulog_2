@@ -26,7 +26,10 @@ def load_user(user_id):
 def inject_models():
     # テンプレート内で Like や Post などのクラスを直接参照できるようにする
     from models import Like, Post
+
     return dict(Like=Like, Post=Post)
+
+
 # ------------------
 
 
@@ -99,9 +102,9 @@ def create_post():
             file_path=file1,
             file_path_2=file2,
             caption=form.caption.data,
-            caption_2=form.caption_2.data, # 追加
-            caption_3=form.caption_3.data, # 追加
-            caption_4=form.caption_4.data, # 追加
+            caption_2=form.caption_2.data,  # 追加
+            caption_3=form.caption_3.data,  # 追加
+            caption_4=form.caption_4.data,  # 追加
             is_comparison=form.is_comparison.data,
         )
         return redirect(url_for("index"))
@@ -144,15 +147,15 @@ def post_detail(post_id):
 @app.after_request
 def add_header(response):
     # すべてのオリジンからのアクセスを許可（AI解析に必要）
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 
 # staticファイルを返す際にCORSを付与する設定
-@app.route('/static/uploads/<path:filename>')
+@app.route("/static/uploads/<path:filename>")
 def uploaded_file(filename):
-    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    response = send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+    response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
 

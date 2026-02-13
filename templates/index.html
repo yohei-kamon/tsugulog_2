@@ -33,37 +33,37 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- キャプション -->
                 <p class="small text-dark mb-3" style="white-space: pre-wrap;">{{ post.caption | truncate(120) }}</p>
-                
+
                 <!-- メディアプレビューエリア -->
                 <div class="post-media rounded overflow-hidden border bg-black text-center position-relative" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
                     {% if post.is_comparison %}
-                        <!-- 比較動画プレビュー -->
-                        <div class="d-flex w-100" style="height: 250px; background-color: #000;">
-                            <video src="/static/uploads/{{ post.file_path }}#t=0.1" class="w-50 h-100" muted preload="metadata" style="object-fit: cover;"></video>
-                            <video src="/static/uploads/{{ post.file_path_2 }}#t=0.1" class="w-50 h-100 border-start border-secondary" muted preload="metadata" style="object-fit: cover;"></video>
-                            <div class="position-absolute top-50 start-50 translate-middle pointer-events-none">
-                                <i class="fa-solid fa-clone text-white opacity-50 fa-2x"></i>
-                            </div>
+                    <!-- 比較動画プレビュー -->
+                    <div class="d-flex w-100" style="height: 250px; background-color: #000;">
+                        <video src="/static/uploads/{{ post.file_path }}#t=0.1" class="w-50 h-100" muted preload="metadata" style="object-fit: cover;"></video>
+                        <video src="/static/uploads/{{ post.file_path_2 }}#t=0.1" class="w-50 h-100 border-start border-secondary" muted preload="metadata" style="object-fit: cover;"></video>
+                        <div class="position-absolute top-50 start-50 translate-middle pointer-events-none">
+                            <i class="fa-solid fa-clone text-white opacity-50 fa-2x"></i>
                         </div>
+                    </div>
                     {% elif post.content_type == 'photo' %}
-                        <!-- 画像表示 -->
-                        <img src="/static/uploads/{{ post.file_path }}" class="img-fluid" style="max-height: 400px; width: auto;">
+                    <!-- 画像表示 -->
+                    <img src="/static/uploads/{{ post.file_path }}" class="img-fluid" style="max-height: 400px; width: auto;">
                     {% else %}
-                        <!-- 単体動画プレビュー (ここを修正) -->
-                        <div class="position-relative w-100">
-                            <video src="/static/uploads/{{ post.file_path }}#t=0.1" class="w-100" style="max-height: 400px; background-color: #000;" muted preload="metadata" playsinline></video>
-                            <!-- 再生アイコンのオーバーレイ (視認性向上) -->
-                            <div class="position-absolute top-50 start-50 translate-middle">
-                                <i class="fa-regular fa-circle-play text-white opacity-75 fa-3x"></i>
-                            </div>
+                    <!-- 単体動画プレビュー (ここを修正) -->
+                    <div class="position-relative w-100">
+                        <video src="/static/uploads/{{ post.file_path }}#t=0.1" class="w-100" style="max-height: 400px; background-color: #000;" muted preload="metadata" playsinline></video>
+                        <!-- 再生アイコンのオーバーレイ (視認性向上) -->
+                        <div class="position-absolute top-50 start-50 translate-middle">
+                            <i class="fa-regular fa-circle-play text-white opacity-75 fa-3x"></i>
                         </div>
+                    </div>
                     {% endif %}
                 </div>
             </div>
-            
+
             <!-- アクションボタン -->
             <div class="card-footer bg-white border-top py-2 d-flex justify-content-around">
                 <button class="btn btn-sm text-secondary fw-bold border-0" onclick="toggleLike({{ post.id }})">

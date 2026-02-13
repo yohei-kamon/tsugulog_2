@@ -153,7 +153,7 @@ def create_post():
         file2 = None
         if request.files.get('file2'):
             file2 = save_media(request.files['file2'], is_image=is_img)
-        
+
         Post.create(
             user=current_user,
             content_type=form.content_type.data,
@@ -343,7 +343,7 @@ async function toggleLike(postId) {
         const data = await response.json();
         const btnIcon = document.querySelector(`#like-btn-${postId} i`);
         const countSpan = document.querySelector(`#like-count-${postId}`);
-        
+
         if (data.liked) {
             btnIcon.classList.replace('fa-regular', 'fa-solid');
             btnIcon.classList.add('text-danger');

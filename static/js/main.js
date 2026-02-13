@@ -1,75 +1,79 @@
 /**
  * TsuguLog: 製造技術承継プラットフォーム 
- * フロントエンド・コアロジック (AI技術解析 & 動作同期)
+ * MediaPipe Tasks API (ES Module版) - CSV保存機能付
  */
 
+import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+
+// グローバル状態
+if (!window.poseLandmarker) window.poseLandmarker = undefined;
 let aiActive = false;
 let isAnalyzed = false;
 let poseData1 = []; 
 let poseData2 = [];
-let currentResults = null; 
 let animationId = null;
+let cumulativeMs = 0;
+
+// MediaPipe 関節名マッピング
+const LANDMARK_NAMES = [
+    "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer",
+    "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow",
+    "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index",
+    "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle",
+    "left_heel", "right_heel", "left_foot_index", "right_foot_index"
+];
 
 /**
- * 1. 共通ユーティリティ
+ * 1. AIライブラリ初期化
  */
-function calculateAngle(p1, p2, p3) {
-    if (!p1 || !p2 || !p3) return 0;
-    const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
-    let angle = Math.abs(radians * 180.0 / Math.PI);
-    if (angle > 180.0) angle = 360 - angle;
-    return Math.round(angle);
-}
-
-function getPoseAtTime(data, time) {
-    if (!data || data.length === 0) return null;
-    let nextIdx = data.findIndex(d => d.time > time);
-    if (nextIdx === 0) return data[0].landmarks;
-    if (nextIdx === -1) return data[data.length - 1].landmarks;
-    return data[nextIdx - 1].landmarks;
+async function initializePoseLandmarker() {
+    if (window.poseLandmarker) return;
+    try {
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        window.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`,
+                delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numPoses: 2
+        });
+        console.log("AIライブラリの準備完了");
+    } catch (error) {
+        console.error("AI初期化エラー:", error);
+    }
 }
 
 /**
- * 2. 状態リセット・クリーンアップ
+ * 2. 状態リセット
  */
-function clearAllAnalysis() {
+window.clearAllAnalysis = function() {
+    if (animationId) cancelAnimationFrame(animationId);
     aiActive = false;
     isAnalyzed = false;
     poseData1 = [];
     poseData2 = [];
-    currentResults = null;
-
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-    }
 
     const toggleBtn = document.getElementById('toggleAI');
-    const resetBtn = document.getElementById('resetAI');
-    const overlay = document.getElementById('stats-overlay');
-    const progress = document.getElementById('analysis-progress-container');
-
     if (toggleBtn) {
         toggleBtn.disabled = false;
         toggleBtn.className = "btn btn-sm btn-warning shadow";
         toggleBtn.innerHTML = '<i class="fa-solid fa-bolt"></i> AI解析 実行';
     }
-    if (resetBtn) resetBtn.classList.add('d-none');
-    if (overlay) overlay.classList.add('d-none');
-    if (progress) {
-        progress.classList.remove('d-none');
-        const bar = document.getElementById('analysis-progress-bar');
-        if (bar) bar.style.width = '0%';
-    }
+    document.getElementById('resetAI')?.classList.add('d-none');
+    document.getElementById('stats-overlay')?.classList.add('d-none');
+    document.getElementById('download-area')?.classList.add('d-none');
 
-    const c1 = document.getElementById('canvas1');
-    const c2 = document.getElementById('canvas2');
-    if (c1) c1.getContext('2d').clearRect(0, 0, c1.width, c1.height);
-    if (c2) c2.getContext('2d').clearRect(0, 0, c2.width, c2.height);
-}
+    ['canvas1', 'canvas2'].forEach(id => {
+        const c = document.getElementById(id);
+        if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    });
+};
 
 /**
- * 3. メイン解析エンジン
+ * 3. 解析・描画エンジン
  */
 async function initPoseDetection() {
     const v1 = document.getElementById('video1');
@@ -79,87 +83,72 @@ async function initPoseDetection() {
     const toggleBtn = document.getElementById('toggleAI');
     const resetBtn = document.getElementById('resetAI');
 
-    if (!v1 || !c1 || !toggleBtn) return;
+    if (!v1 || !toggleBtn) return;
 
-    const ctx1 = c1.getContext('2d');
-    const ctx2 = c2 ? c2.getContext('2d') : null;
+    await initializePoseLandmarker();
 
-    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
-    pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    pose.onResults((results) => { currentResults = results; });
+    resetBtn?.addEventListener('click', () => {
+        if (confirm("解析データをリセットしますか？")) window.clearAllAnalysis();
+    });
 
-    if (resetBtn) {
-        resetBtn.addEventListener('click', () => {
-            if (confirm("解析データをリセットしますか？")) clearAllAnalysis();
-        });
-    }
+    // CSV保存ボタンのイベント登録
+    document.getElementById('downloadCSV1')?.addEventListener('click', () => downloadAsCSV(poseData1, "video1_motion_data.csv"));
+    document.getElementById('downloadCSV2')?.addEventListener('click', () => downloadAsCSV(poseData2, "video2_motion_data.csv"));
 
     toggleBtn.addEventListener('click', async () => {
         if (!isAnalyzed) {
+            if (!window.poseLandmarker) return alert("ライブラリ読込中...");
             toggleBtn.disabled = true;
-            document.getElementById('stats-overlay').classList.remove('d-none');
-            
-            if (v1.readyState < 2) await new Promise(r => v1.onloadeddata = r);
-            poseData1 = await analyzeVideoInSteps(v1, pose, v2 ? "メイン動画" : "解析動画");
+            document.getElementById('stats-overlay')?.classList.remove('d-none');
 
+            poseData1 = await analyzeVideo(v1, "動画1");
             if (v2) {
-                await new Promise(r => setTimeout(r, 500));
-                if (v2.readyState < 2) await new Promise(r => v2.onloadeddata = r);
-                poseData2 = await analyzeVideoInSteps(v2, pose, "比較動画");
+                if (isNaN(v2.duration) || v2.readyState < 1) await new Promise(r => v2.onloadedmetadata = r);
+                poseData2 = await analyzeVideo(v2, "動画2");
+                document.getElementById('downloadCSV2')?.classList.remove('d-none');
             }
-            
+
             isAnalyzed = true;
             toggleBtn.disabled = false;
-            if (resetBtn) resetBtn.classList.remove('d-none');
-            document.getElementById('analysis-progress-container').classList.add('d-none');
-            document.getElementById('stats-overlay').classList.add('d-none');
+            resetBtn?.classList.remove('d-none');
+            document.getElementById('download-area')?.classList.remove('d-none');
+            document.getElementById('analysis-progress-container')?.classList.add('d-none');
+            document.getElementById('stats-overlay')?.classList.add('d-none');
             toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> 解析表示 ON';
         }
-        
+
         aiActive = !aiActive;
         toggleBtn.classList.toggle('btn-warning');
         toggleBtn.classList.toggle('btn-success');
-        
         if (aiActive) renderLoop();
     });
 
-    async function analyzeVideoInSteps(video, poseInstance, label) {
+    async function analyzeVideo(video, label) {
         const data = [];
+        const step = 0.1;
         const duration = video.duration;
-        const step = 0.1; 
-        const originalTime = video.currentTime;
         const progressLabel = document.getElementById('progress-label');
         const progressBar = document.getElementById('analysis-progress-bar');
-        const progressPercent = document.getElementById('progress-percent');
-
+        const originalTime = video.currentTime;
         video.pause();
 
         for (let t = 0; t <= duration; t += step) {
-            const progress = Math.round((t / duration) * 100);
-            if (progressLabel) progressLabel.innerText = `${label}: ${t.toFixed(1)}秒`;
-            if (progressBar) progressBar.style.width = `${progress}%`;
-            if (progressPercent) progressPercent.innerText = `${progress}%`;
-
             video.currentTime = t;
-            await new Promise((resolve) => {
-                let resolved = false;
-                const onSeeked = () => { if (!resolved) { resolved = true; video.removeEventListener('seeked', onSeeked); resolve(); }};
-                video.addEventListener('seeked', onSeeked);
-                setTimeout(onSeeked, 1500);
+            await new Promise(r => {
+                const timer = setTimeout(r, 1000);
+                video.onseeked = () => { clearTimeout(timer); r(); };
             });
 
-            currentResults = null;
+            if (progressLabel) progressLabel.innerText = `${label}: ${t.toFixed(1)}s 解析中`;
+            if (progressBar) progressBar.style.width = `${Math.round((t / duration) * 100)}%`;
+
             try {
-                await poseInstance.send({image: video});
-                let poll = 0;
-                while (currentResults === null && poll < 40) {
-                    await new Promise(r => setTimeout(r, 50));
-                    poll++;
+                const result = window.poseLandmarker.detectForVideo(video, cumulativeMs);
+                cumulativeMs += 100;
+                if (result && result.landmarks) {
+                    data.push({ time: t.toFixed(2), poses: JSON.parse(JSON.stringify(result.landmarks)) });
                 }
-                if (currentResults && currentResults.poseLandmarks) {
-                    data.push({ time: t, landmarks: JSON.parse(JSON.stringify(currentResults.poseLandmarks)) });
-                }
-            } catch (e) { console.warn(`Analysis failed at ${t}s`); }
+            } catch (e) { cumulativeMs += 100; }
         }
         video.currentTime = originalTime;
         return data;
@@ -167,89 +156,98 @@ async function initPoseDetection() {
 
     function renderLoop() {
         if (!aiActive) return;
-        const l1 = getPoseAtTime(poseData1, v1.currentTime);
-        drawOnCanvas(c1, ctx1, l1);
-        if (v2 && ctx2) {
-            const l2 = getPoseAtTime(poseData2, v2.currentTime);
-            drawOnCanvas(c2, ctx2, l2);
-        }
+        const time = v1.currentTime;
+        drawPoses(c1, getPoseAtTime(poseData1, time));
+        if (v2 && c2) drawPoses(c2, getPoseAtTime(poseData2, time));
         animationId = requestAnimationFrame(renderLoop);
     }
 
-    function drawOnCanvas(canvas, ctx, landmarks) {
-        if (!ctx || !canvas) return;
-        canvas.width = canvas.clientWidth;
-        canvas.height = canvas.clientHeight;
+    function drawPoses(canvas, poses) {
+        if (!canvas || !poses) return;
+        const ctx = canvas.getContext('2d');
+        canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (landmarks) {
-            drawConnectors(ctx, landmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-            drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 2});
-        }
+        const drawingUtils = new DrawingUtils(ctx);
+        poses.forEach((landmarks, idx) => {
+            const color = idx === 0 ? '#00FF00' : '#00BFFF';
+            drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: color, lineWidth: 2 });
+            drawingUtils.drawLandmarks(landmarks, { color: '#FF0000', lineWidth: 1, radius: 2 });
+        });
+    }
+
+    function getPoseAtTime(data, time) {
+        if (!data || data.length === 0) return null;
+        let idx = data.findIndex(d => d.time >= time);
+        return data[idx === -1 ? data.length - 1 : idx].poses;
     }
 }
 
 /**
- * 4. 動画同期ロジック (Master/Slave方式)
+ * 4. CSV出力ロジック
+ */
+function downloadAsCSV(data, filename) {
+    if (!data || data.length === 0) return alert("データがありません。");
+
+    let csvContent = "timestamp_sec,person_id,landmark_id,landmark_name,x,y,z,visibility\n";
+
+    data.forEach(frame => {
+        frame.poses.forEach((pose, personIdx) => {
+            pose.forEach((lm, lmIdx) => {
+                const row = [
+                    frame.time,
+                    personIdx,
+                    lmIdx,
+                    LANDMARK_NAMES[lmIdx],
+                    lm.x.toFixed(6),
+                    lm.y.toFixed(6),
+                    lm.z.toFixed(6),
+                    lm.visibility.toFixed(6)
+                ].join(",");
+                csvContent += row + "\n";
+            });
+        });
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+/**
+ * 5. 動画同期・その他
  */
 function initVideoSync() {
     document.querySelectorAll('.comparison-container').forEach(container => {
-        const v1 = container.querySelector('.video-1'); // 左（マスター）
-        const v2 = container.querySelector('.video-2'); // 右（スレーブ）
-
+        const v1 = container.querySelector('.video-1');
+        const v2 = container.querySelector('.video-2');
         if (v1 && v2) {
-            // 再生開始
-            v1.addEventListener('play', () => {
-                v2.play().catch(e => console.warn("Right video playback blocked by browser."));
-            });
-            // 一時停止
-            v1.addEventListener('pause', () => {
-                v2.pause();
-            });
-            // シーク（時間合わせ）
-            v1.addEventListener('seeking', () => {
-                v2.currentTime = v1.currentTime;
-            });
-            // 再生速度の同期
-            v1.addEventListener('ratechange', () => {
-                v2.playbackRate = v1.playbackRate;
-            });
-            // 読み込み待ちの同期
-            v1.addEventListener('waiting', () => {
-                v2.pause();
-            });
-            v1.addEventListener('playing', () => {
-                v2.play().catch(e => {});
-            });
+            v1.addEventListener('play', () => v2.play().catch(()=>{}));
+            v1.addEventListener('pause', () => v2.pause());
+            v1.addEventListener('seeking', () => v2.currentTime = v1.currentTime);
         }
     });
 }
 
-/**
- * 5. その他の機能
- */
-async function toggleLike(postId) {
-    const csrfToken = document.querySelector('#csrf_token')?.value;
+window.toggleLike = async function(postId) {
     const response = await fetch(`/like/${postId}`, {
         method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken || '' }
+        headers: { 'X-CSRFToken': document.querySelector('#csrf_token')?.value || '' }
     });
     if (response.ok) {
         const data = await response.json();
         const btnIcon = document.querySelector(`#like-btn-${postId} i`);
-        const countSpan = document.querySelector(`#like-count-${postId}`);
-        if (data.liked) {
-            btnIcon.classList.replace('fa-regular', 'fa-solid');
-            btnIcon.classList.add('text-danger');
-        } else {
-            btnIcon.classList.replace('fa-solid', 'fa-regular');
-            btnIcon.classList.remove('text-danger');
-        }
-        if (countSpan) countSpan.innerText = data.count;
+        if (data.liked) { btnIcon.classList.replace('fa-regular', 'fa-solid'); btnIcon.classList.add('text-danger'); }
+        else { btnIcon.classList.replace('fa-solid', 'fa-regular'); btnIcon.classList.remove('text-danger'); }
     }
-}
+};
 
-window.addEventListener('pagehide', clearAllAnalysis);
-
+window.addEventListener('pagehide', window.clearAllAnalysis);
 document.addEventListener('DOMContentLoaded', () => {
     initVideoSync();
     initPoseDetection();
