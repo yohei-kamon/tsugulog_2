@@ -109,11 +109,10 @@ def post_detail(post_id):
     comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
     return render_template('detail.html', post=post, form=form, comments=comments)
 
-# --- DTW 採点エンジン ---
+# --- 1動画内 2人DTW 採点エンジン ---
 @app.route('/analyze/dtw', methods=['POST'])
 @login_required
 def analyze_dtw():
-    # normPoseData (正規化済みデータ) を受け取る
     json_data = request.json.get('normPoseData')
     if not json_data or len(json_data) < 5:
         return jsonify({'error': 'Insufficient data'}), 400
@@ -134,33 +133,30 @@ def analyze_dtw():
     if len(s1) == 0 or len(s2) == 0:
         return jsonify({'error': '2人検出されませんでした'}), 400
 
-    # DTW実行（時間軸補正された最短距離パスを算出）
+    # DTW実行
     distance, path = fastdtw(s1, s2, dist=euclidean)
 
-    cos_list = []
-    euc_list = []
+    cos_list, euc_list = [], []
     for (idx1, idx2) in path:
         v1, v2 = s1[idx1], s2[idx2]
         euc_list.append(euclidean(v1, v2))
         n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
-        if n1 > 0 and n2 > 0:
-            cos_list.append(np.dot(v1, v2) / (n1 * n2))
+        if n1 > 0 and n2 > 0: cos_list.append(np.dot(v1, v2) / (n1 * n2))
 
     avg_cos = np.mean(cos_list) if cos_list else 0
     avg_euc = np.mean(euc_list) if euc_list else 1.0
     
-    # 採点計算
+    # 採点
     form_score = max(0, (avg_cos - 0.8) / (1.0 - 0.8)) * 100
     pos_score = max(0, 100 * (1 - (avg_euc / 0.2)))
     total_score = (form_score * 0.6) + (pos_score * 0.4)
-    
     if avg_euc < 0.01 and avg_cos > 0.995: total_score = 100.0
 
     return jsonify({
         'dtw_score': round(total_score, 1),
         'avg_cosine': round(avg_cos, 4),
         'avg_euclidean': round(avg_euc, 4),
-        'feedback': "時間軸のズレを補正し、動作の「型」と「位置」を採点しました。"
+        'feedback': "1動画内の2名の動作を時間軸補正して採点しました。"
     })
 
 @app.route('/like/<int:post_id>', methods=['POST'])
