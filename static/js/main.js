@@ -1,253 +1,209 @@
 /**
- * TsuguLog: 製造技術承継プラットフォーム 
- * AI解析ロジック - リセット機能完全修正版
+ * TsuguLog: 高精度・低負荷同期エンジン
  */
-
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
 
-// モジュールレベルの変数管理
 if (!window.poseLandmarker) window.poseLandmarker = undefined;
-let aiActive = false;
-let isAnalyzed = false;
-let animationId = null;
-let cumulativeMs = 0; // MediaPipeの連続性を保つためリセットしない
-let poseData1 = [];
-let poseData2 = [];
+let aiActive = false, isAnalyzed = false, animationId = null, cumulativeMs = 0;
+let poseData1 = [], poseData2 = [];
 
-const LANDMARK_NAMES = [
-    "nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer",
-    "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow",
-    "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index",
-    "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle",
-    "left_heel", "right_heel", "left_foot_index", "right_foot_index"
-];
+const LANDMARK_NAMES = ["nose", "left_eye_inner", "left_eye", "left_eye_outer", "right_eye_inner", "right_eye", "right_eye_outer", "left_ear", "right_ear", "mouth_left", "mouth_right", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_pinky", "right_pinky", "left_index", "right_index", "left_thumb", "right_thumb", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle", "left_heel", "right_heel", "left_foot_index", "right_foot_index"];
 
-// 正規化計算
-const calcDist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-function getNormalizedPose(landmarks) {
-    if (!landmarks || landmarks.length < 25) return landmarks;
-    const center = {
-        x: (landmarks[11].x + landmarks[12].x + landmarks[23].x + landmarks[24].x) / 4,
-        y: (landmarks[11].y + landmarks[12].y + landmarks[23].y + landmarks[24].y) / 4
-    };
-    const scale = (calcDist(landmarks[11], landmarks[23]) + calcDist(landmarks[12], landmarks[24])) / 2 || 1;
-    return landmarks.map(p => ({ x: (p.x - center.x) / scale, y: (p.y - center.y) / scale, z: p.z / scale }));
+/** 1. 補間ロジック (タイミング調整の要) **/
+function getInterpolatedPose(data, time) {
+    if (!data || data.length === 0) return null;
+    let nextIdx = data.findIndex(d => d.time > time);
+    if (nextIdx === 0) return data[0].poses;
+    if (nextIdx === -1) return data[data.length - 1].poses;
+
+    const prev = data[nextIdx - 1], next = data[nextIdx];
+    const ratio = (time - prev.time) / (next.time - prev.time);
+
+    return prev.poses.map((pose, pIdx) => {
+        const nPose = next.poses[pIdx];
+        if (!nPose) return pose;
+        return pose.map((lm, i) => ({
+            x: lm.x + (nPose[i].x - lm.x) * ratio,
+            y: lm.y + (nPose[i].y - lm.y) * ratio,
+            z: lm.z + (nPose[i].z - lm.z) * ratio,
+            visibility: lm.visibility
+        }));
+    });
 }
 
-/**
- * 【重要】リセット機能の完全版
- */
+/** 2. 正規化 (計算用) **/
+function getNormalizedPose(l) {
+    if (!l || l.length < 25) return l;
+    const c = { x: (l[11].x + l[12].x + l[23].x + l[24].x) / 4, y: (l[11].y + l[12].y + l[23].y + l[24].y) / 4 };
+    const s = (Math.sqrt((l[11].x-l[23].x)**2 + (l[11].y-l[23].y)**2) + Math.sqrt((l[12].x-l[24].x)**2 + (l[12].y-l[24].y)**2)) / 2 || 1;
+    return l.map(p => ({ x: (p.x - c.x) / s, y: (p.y - c.y) / s, z: p.z / s }));
+}
+
+/** 3. リセット **/
 window.clearAllAnalysis = function() {
-    console.log("Resetting AI Analysis...");
-    
-    // 1. アニメーションループを完全に停止
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-    }
-
-    // 2. 状態フラグと解析データの初期化
-    aiActive = false;
-    isAnalyzed = false;
-    poseData1 = [];
-    poseData2 = [];
-
-    // 3. UI要素の完全な初期化
-    const toggleBtn = document.getElementById('toggleAI');
-    const resetBtn = document.getElementById('resetAI');
-    const statsOverlay = document.getElementById('stats-overlay');
-    const overallCard = document.getElementById('overall-dtw-card');
-    const downloadArea = document.getElementById('download-area');
-    const progressBar = document.getElementById('analysis-progress-bar');
-    const progressPercent = document.getElementById('progress-percent');
-
-    if (toggleBtn) {
-        toggleBtn.disabled = false;
-        toggleBtn.className = "btn btn-sm btn-warning shadow";
-        toggleBtn.innerHTML = '<i class="fa-solid fa-bolt"></i> AI解析 実行';
-    }
-    if (resetBtn) resetBtn.classList.add('d-none');
-    if (statsOverlay) statsOverlay.classList.add('d-none');
-    if (overallCard) overallCard.classList.add('d-none');
-    if (downloadArea) {
-        downloadArea.classList.add('d-none');
-        document.getElementById('downloadCSV2')?.classList.add('d-none');
-    }
-    if (progressBar) progressBar.style.width = '0%';
-    if (progressPercent) progressPercent.innerText = '0%';
-
-    // 4. キャンバスの描画内容を消去
+    if (animationId) cancelAnimationFrame(animationId);
+    aiActive = false; isAnalyzed = false; poseData1 = []; poseData2 = [];
+    document.getElementById('toggleAI').className = "btn btn-xs btn-warning py-0 px-2 fw-bold";
+    document.getElementById('toggleAI').innerHTML = "AI解析 実行";
+    document.getElementById('resetAI')?.classList.add('d-none');
+    document.getElementById('overall-dtw-card')?.classList.add('d-none');
+    document.getElementById('download-area')?.classList.add('d-none');
     ['canvas1', 'canvas2'].forEach(id => {
         const c = document.getElementById(id);
-        if (c) {
-            const ctx = c.getContext('2d');
-            ctx.clearRect(0, 0, c.width, c.height);
-        }
+        if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
     });
 };
 
+/** 4. 解析エンジン **/
 async function initPoseDetection() {
     const v1 = document.getElementById('video1'), c1 = document.getElementById('canvas1');
     const v2 = document.getElementById('video2'), c2 = document.getElementById('canvas2');
-    const toggleBtn = document.getElementById('toggleAI'), resetBtn = document.getElementById('resetAI');
+    const toggleBtn = document.getElementById('toggleAI');
 
     if (!v1 || !toggleBtn) return;
 
-    // MediaPipe初期化
     const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
     window.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`, delegate: "GPU" },
         runningMode: "VIDEO", numPoses: 2
     });
 
-    // リセットボタンにイベントを登録
-    resetBtn?.addEventListener('click', () => {
-        if (confirm("解析データを破棄してリセットしますか？")) {
-            window.clearAllAnalysis();
-        }
-    });
+    document.getElementById('downloadCSV1')?.addEventListener('click', () => downloadAsCSV(poseData1, "data.csv"));
+    document.getElementById('recordVideoBtn')?.addEventListener('click', () => startLiveExport(v1, c1, v2, c2));
 
     toggleBtn.addEventListener('click', async () => {
         if (!isAnalyzed) {
-            if (!window.poseLandmarker) return alert("AIエンジンの準備を待っています...");
-
             toggleBtn.disabled = true;
-            document.getElementById('stats-overlay')?.classList.remove('d-none');
-            document.getElementById('analysis-progress-container')?.classList.remove('d-none');
-            const pPerc = document.getElementById('progress-percent'), pBar = document.getElementById('analysis-progress-bar');
+            document.getElementById('stats-overlay').classList.remove('d-none');
+            poseData1 = await analyzeVideo(v1, "動画1");
+            if (v2) poseData2 = await analyzeVideo(v2, "動画2");
+            else if (poseData1.length > 0 && poseData1[0].poses.length >= 2) await runDtw(poseData1, null);
 
-            // --- 動画1解析 (比較用動画があれば1人抽出、なければ全員) ---
-            poseData1 = await analyzeVideo(v1, "動画1", pPerc, pBar, v2 !== null);
-            
-            // --- 動画2解析 (存在する場合) ---
-            if (v2) {
-                if (isNaN(v2.duration)) await new Promise(r => v2.onloadedmetadata = r);
-                poseData2 = await analyzeVideo(v2, "動画2", pPerc, pBar, true);
-                document.getElementById('downloadCSV2')?.classList.remove('d-none');
-            }
-
-            // 採点実行 (1動画内2人 または 2動画間比較)
-            await runComparisonScoring(poseData1, poseData2);
-
-            isAnalyzed = true;
-            toggleBtn.disabled = false;
-            resetBtn?.classList.remove('d-none');
+            isAnalyzed = true; toggleBtn.disabled = false;
+            document.getElementById('resetAI')?.classList.remove('d-none');
             document.getElementById('download-area')?.classList.remove('d-none');
-            document.getElementById('stats-overlay')?.classList.add('d-none');
-            toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> 解析表示 ON';
+            document.getElementById('stats-overlay').classList.add('d-none');
+            toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> 表示 ON';
         }
-
-        // 表示の切り替え
         aiActive = !aiActive;
-        toggleBtn.classList.toggle('btn-warning');
-        toggleBtn.classList.toggle('btn-success');
-        
-        if (aiActive) {
-            renderLoop();
-        } else {
-            if (animationId) cancelAnimationFrame(animationId);
-        }
+        toggleBtn.classList.toggle('btn-warning'); toggleBtn.classList.toggle('btn-success');
+        if (aiActive) renderLoop();
     });
 
-    async function analyzeVideo(video, label, percentEl, barEl, limitToOne) {
+    async function analyzeVideo(video, label) {
         const data = [], step = 0.1, duration = video.duration;
         const originalTime = video.currentTime;
         video.pause();
         for (let t = 0; t <= duration; t += step) {
             video.currentTime = t;
             await new Promise(r => { video.onseeked = r; setTimeout(r, 1000); });
-            
             const prog = Math.min(100, Math.round((t / duration) * 100));
-            if (percentEl) percentEl.innerText = `${label}: ${prog}%`;
-            if (barEl) barEl.style.width = `${prog}%`;
+            document.getElementById('progress-percent').innerText = `${label}: ${prog}%`;
+            document.getElementById('analysis-progress-bar').style.width = `${prog}%`;
 
             const res = window.poseLandmarker.detectForVideo(video, cumulativeMs);
             cumulativeMs += 100;
-
             if (res.landmarks) {
-                let poses = JSON.parse(JSON.stringify(res.landmarks));
-                if (limitToOne) poses = poses.slice(0, 1);
-                data.push({ 
-                    time: t.toFixed(2), 
-                    poses: poses,
-                    normPoses: poses.map(l => getNormalizedPose(l)) 
-                });
+                const poses = JSON.parse(JSON.stringify(res.landmarks));
+                data.push({ time: t, poses: poses, normPoses: poses.map(l => getNormalizedPose(l)) });
             }
         }
         video.currentTime = originalTime;
         return data;
     }
 
-    async function runComparisonScoring(d1, d2) {
-        const payload = { normPoseData: d1.map(d => ({time: d.time, poses: d.normPoses})) };
-        if (d2 && d2.length > 0) {
-            payload.poseData1 = payload.normPoseData;
-            payload.poseData2 = d2.map(d => ({time: d.time, poses: d.normPoses}));
-        }
-
+    async function runDtw(d1, d2) {
+        const body = { normPoseData1: d1.map(d => ({time: d.time, poses: d.normPoses})) };
+        if (d2) body.normPoseData2 = d2.map(d => ({time: d.time, poses: d.normPoses}));
         const res = await fetch('/analyze/dtw', {
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.getElementById('csrf_token').value},
-            body: JSON.stringify(payload)
+            method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.getElementById('csrf_token').value},
+            body: JSON.stringify(body)
         }).then(r => r.json());
 
         if (res.dtw_score !== undefined) {
             document.getElementById('overall-dtw-card')?.classList.remove('d-none');
             document.getElementById('dtw-score-val').innerText = res.dtw_score;
             document.getElementById('dtw-score-bar').style.width = `${res.dtw_score}%`;
-            document.getElementById('avg-cosine-val').innerText = res.avg_cosine.toFixed(4);
-            document.getElementById('avg-euclidean-val').innerText = res.avg_euclidean.toFixed(4);
-            const bar = document.getElementById('dtw-score-bar');
-            bar.className = `progress-bar ${res.dtw_score > 80 ? 'bg-success' : (res.dtw_score > 50 ? 'bg-warning' : 'bg-danger')}`;
         }
     }
 
     function renderLoop() {
         if (!aiActive) return;
-        const curr = v1.currentTime;
-        const f1 = poseData1.find(d => d.time >= curr);
-        if (f1) drawPoses(c1, f1.poses);
-        
-        if (v2 && c2 && poseData2.length > 0) {
-            const f2 = poseData2.find(d => d.time >= curr);
-            if (f2) drawPoses(c2, f2.poses);
-        }
+        const time = v1.currentTime;
+        draw(c1, getInterpolatedPose(poseData1, time));
+        if (v2 && c2) draw(c2, getInterpolatedPose(poseData2, time));
         animationId = requestAnimationFrame(renderLoop);
     }
 
-    function drawPoses(canvas, poses) {
+    function draw(canvas, poses) {
         if (!canvas || !poses) return;
         canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
         const ctx = canvas.getContext('2d'), du = new DrawingUtils(ctx);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         poses.forEach((lm, i) => {
-            du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, {color: i===0?'#00FF00':'#00BFFF', lineWidth: 2});
+            du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, {color: i===0?'#00FF00':'#00BFFF', lineWidth: 4});
             du.drawLandmarks(lm, {color: '#FF0000', radius: 2});
         });
     }
 }
 
-/** CSV保存用 **/
-function downloadAsCSV(data, filename) {
-    if (!data || data.length === 0) return;
-    let csv = "timestamp_sec,person_id,landmark_id,landmark_name,x,y,z\n";
-    data.forEach(frame => frame.poses.forEach((pose, pIdx) => pose.forEach((lm, lmIdx) => {
-        csv += `${frame.time},${pIdx},${lmIdx},${LANDMARK_NAMES[lmIdx]},${lm.x.toFixed(6)},${lm.y.toFixed(6)},${lm.z.toFixed(6)}\n`;
-    })));
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    link.download = filename; link.click();
+/** 5. 【軽量】リアルタイム合成保存 **/
+async function startLiveExport(v1, c1, v2, c2) {
+    const btn = document.getElementById('recordVideoBtn');
+    btn.disabled = true; btn.innerText = "録画中...";
+    
+    // 合成用キャンバス
+    const outC = document.createElement('canvas');
+    const ctx = outC.getContext('2d');
+    const w = v1.videoWidth, h = v1.videoHeight;
+    outC.width = v2 ? w * 2 : w; outC.height = h;
+
+    const stream = outC.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+    const chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+        link.download = "technical_analysis.webm"; link.click();
+        btn.disabled = false; btn.innerText = "解析済み動画を生成・保存";
+    };
+
+    recorder.start();
+    v1.currentTime = 0; if (v2) v2.currentTime = 0;
+    aiActive = true; 
+    v1.play(); if (v2) v2.play();
+
+    const interval = setInterval(() => {
+        ctx.drawImage(v1, 0, 0, w, h);
+        ctx.drawImage(c1, 0, 0, w, h);
+        if (v2) {
+            ctx.drawImage(v2, w, 0, w, h);
+            ctx.drawImage(c2, w, 0, w, h);
+        }
+        if (v1.ended) { clearInterval(interval); recorder.stop(); }
+    }, 33);
 }
 
-window.addEventListener('pagehide', window.clearAllAnalysis);
+function downloadAsCSV(data, name) {
+    let csv = "time,person,landmark,x,y,z\n";
+    data.forEach(f => f.poses.forEach((p, pi) => p.forEach((l, li) => {
+        csv += `${f.time},${pi},${LANDMARK_NAMES[li]},${l.x},${l.y},${l.z}\n`;
+    })));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+    a.download = name; a.click();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    initPoseDetection();
-    document.querySelectorAll('.comparison-container').forEach(container => {
-        const v1 = container.querySelector('.video-1'), v2 = container.querySelector('.video-2');
-        if (v1 && v2) {
-            v1.addEventListener('play', () => v2.play().catch(()=>{}));
-            v1.addEventListener('pause', () => v2.pause());
-            v1.addEventListener('seeking', () => v2.currentTime = v1.currentTime);
+    // 同期設定
+    document.querySelectorAll('.comparison-container').forEach(cnt => {
+        const video1 = cnt.querySelector('.video-1'), video2 = cnt.querySelector('.video-2');
+        if (video1 && video2) {
+            video1.onplay = () => video2.play();
+            video1.onpause = () => video2.pause();
+            video1.onseeking = () => video2.currentTime = video1.currentTime;
         }
     });
+    initPoseDetection();
 });
