@@ -45,7 +45,7 @@ def save_media(file, is_image=True):
         file.save(path)
     return filename
 
-# --- 認証 ---
+# --- 認証ルート ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     form = RegisterForm()
@@ -73,7 +73,7 @@ def login():
 def logout():
     logout_user(); return redirect(url_for('login'))
 
-# --- メイン ---
+# --- メイン機能 ---
 @app.route('/')
 @login_required
 def index():
@@ -109,29 +109,39 @@ def post_detail(post_id):
     comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
     return render_template('detail.html', post=post, form=form, comments=comments)
 
-# --- 1動画内 2人DTW 採点エンジン ---
+# --- 技術採点エンジン (DTW) ---
 @app.route('/analyze/dtw', methods=['POST'])
 @login_required
 def analyze_dtw():
-    json_data = request.json.get('normPoseData')
-    if not json_data or len(json_data) < 5:
-        return jsonify({'error': 'Insufficient data'}), 400
+    # 2つのデータセット(data1, data2)を受け取る
+    json_data = request.json
+    d1 = json_data.get('poseData1')
+    d2 = json_data.get('poseData2') # 2画面モード用
+    
+    if not d1 or len(d1) < 5:
+        return jsonify({'error': 'データ不足です'}), 400
 
-    def extract_series(p_idx):
+    def extract_series(data_list, person_idx):
         series = []
-        for frame in json_data:
-            if len(frame['poses']) > p_idx:
-                lm = frame['poses'][p_idx]
+        for frame in data_list:
+            if len(frame['poses']) > person_idx:
+                lm = frame['poses'][person_idx]
                 joints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
                 vec = []
                 for j in joints: vec.extend([lm[j]['x'], lm[j]['y']])
                 series.append(vec)
         return np.array(series)
 
-    s1 = extract_series(0)
-    s2 = extract_series(1)
+    # 1動画内比較か、2動画間比較かを判定
+    if d2:
+        s1 = extract_series(d1, 0)
+        s2 = extract_series(d2, 0)
+    else:
+        s1 = extract_series(d1, 0)
+        s2 = extract_series(d1, 1)
+
     if len(s1) == 0 or len(s2) == 0:
-        return jsonify({'error': '2人検出されませんでした'}), 400
+        return jsonify({'error': '比較対象が検出されませんでした'}), 400
 
     # DTW実行
     distance, path = fastdtw(s1, s2, dist=euclidean)
@@ -146,17 +156,17 @@ def analyze_dtw():
     avg_cos = np.mean(cos_list) if cos_list else 0
     avg_euc = np.mean(euc_list) if euc_list else 1.0
     
-    # 採点
+    # 採点ロジック
     form_score = max(0, (avg_cos - 0.8) / (1.0 - 0.8)) * 100
     pos_score = max(0, 100 * (1 - (avg_euc / 0.2)))
     total_score = (form_score * 0.6) + (pos_score * 0.4)
-    if avg_euc < 0.01 and avg_cos > 0.995: total_score = 100.0
+    if avg_euc < 0.015 and avg_cos > 0.99: total_score = 100.0
 
     return jsonify({
         'dtw_score': round(total_score, 1),
         'avg_cosine': round(avg_cos, 4),
         'avg_euclidean': round(avg_euc, 4),
-        'feedback': "1動画内の2名の動作を時間軸補正して採点しました。"
+        'feedback': "動画間の動作軌跡を時間補正して採点しました。"
     })
 
 @app.route('/like/<int:post_id>', methods=['POST'])

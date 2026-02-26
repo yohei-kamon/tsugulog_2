@@ -1,17 +1,17 @@
 /**
  * TsuguLog: 製造技術承継プラットフォーム 
- * AI解析 & 2動画個別1人抽出版 (ES Module)
+ * AI解析ロジック - リセット機能完全修正版
  */
 
 import { PoseLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
 
-// グローバル状態管理
+// モジュールレベルの変数管理
 if (!window.poseLandmarker) window.poseLandmarker = undefined;
 let aiActive = false;
 let isAnalyzed = false;
 let animationId = null;
-let cumulativeMs = 0;
-let poseData1 = []; 
+let cumulativeMs = 0; // MediaPipeの連続性を保つためリセットしない
+let poseData1 = [];
 let poseData2 = [];
 
 const LANDMARK_NAMES = [
@@ -22,7 +22,7 @@ const LANDMARK_NAMES = [
     "left_heel", "right_heel", "left_foot_index", "right_foot_index"
 ];
 
-// 正規化計算 (採点用)
+// 正規化計算
 const calcDist = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 function getNormalizedPose(landmarks) {
     if (!landmarks || landmarks.length < 25) return landmarks;
@@ -35,19 +35,31 @@ function getNormalizedPose(landmarks) {
 }
 
 /**
- * リセット機能
+ * 【重要】リセット機能の完全版
  */
 window.clearAllAnalysis = function() {
-    if (animationId) cancelAnimationFrame(animationId);
+    console.log("Resetting AI Analysis...");
+    
+    // 1. アニメーションループを完全に停止
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+
+    // 2. 状態フラグと解析データの初期化
     aiActive = false;
     isAnalyzed = false;
     poseData1 = [];
     poseData2 = [];
+
+    // 3. UI要素の完全な初期化
     const toggleBtn = document.getElementById('toggleAI');
     const resetBtn = document.getElementById('resetAI');
     const statsOverlay = document.getElementById('stats-overlay');
     const overallCard = document.getElementById('overall-dtw-card');
     const downloadArea = document.getElementById('download-area');
+    const progressBar = document.getElementById('analysis-progress-bar');
+    const progressPercent = document.getElementById('progress-percent');
 
     if (toggleBtn) {
         toggleBtn.disabled = false;
@@ -57,33 +69,22 @@ window.clearAllAnalysis = function() {
     if (resetBtn) resetBtn.classList.add('d-none');
     if (statsOverlay) statsOverlay.classList.add('d-none');
     if (overallCard) overallCard.classList.add('d-none');
-    if (downloadArea) downloadArea.classList.add('d-none');
+    if (downloadArea) {
+        downloadArea.classList.add('d-none');
+        document.getElementById('downloadCSV2')?.classList.add('d-none');
+    }
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressPercent) progressPercent.innerText = '0%';
 
+    // 4. キャンバスの描画内容を消去
     ['canvas1', 'canvas2'].forEach(id => {
         const c = document.getElementById(id);
-        if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+        if (c) {
+            const ctx = c.getContext('2d');
+            ctx.clearRect(0, 0, c.width, c.height);
+        }
     });
 };
-
-/**
- * CSVダウンロード
- */
-function downloadAsCSV(data, filename) {
-    if (!data || data.length === 0) return alert("解析データがありません。");
-    let csvContent = "timestamp_sec,person_id,landmark_id,landmark_name,x,y,z\n";
-    data.forEach(frame => {
-        frame.poses.forEach((pose, pIdx) => {
-            pose.forEach((lm, lmIdx) => {
-                csvContent += `${frame.time},${pIdx},${lmIdx},${LANDMARK_NAMES[lmIdx]},${lm.x.toFixed(6)},${lm.y.toFixed(6)},${lm.z.toFixed(6)}\n`;
-            });
-        });
-    });
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url; link.setAttribute("download", filename);
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-}
 
 async function initPoseDetection() {
     const v1 = document.getElementById('video1'), c1 = document.getElementById('canvas1');
@@ -92,44 +93,60 @@ async function initPoseDetection() {
 
     if (!v1 || !toggleBtn) return;
 
+    // MediaPipe初期化
     const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
     window.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task`, delegate: "GPU" },
         runningMode: "VIDEO", numPoses: 2
     });
 
-    document.getElementById('downloadCSV1')?.addEventListener('click', () => downloadAsCSV(poseData1, "video1_motion.csv"));
-    document.getElementById('downloadCSV2')?.addEventListener('click', () => downloadAsCSV(poseData2, "video2_motion.csv"));
+    // リセットボタンにイベントを登録
+    resetBtn?.addEventListener('click', () => {
+        if (confirm("解析データを破棄してリセットしますか？")) {
+            window.clearAllAnalysis();
+        }
+    });
 
     toggleBtn.addEventListener('click', async () => {
         if (!isAnalyzed) {
-            if (!window.poseLandmarker) return alert("準備中...");
+            if (!window.poseLandmarker) return alert("AIエンジンの準備を待っています...");
+
             toggleBtn.disabled = true;
-            document.getElementById('stats-overlay').classList.remove('d-none');
-            const pPercent = document.getElementById('progress-percent');
-            const pBar = document.getElementById('analysis-progress-bar');
+            document.getElementById('stats-overlay')?.classList.remove('d-none');
+            document.getElementById('analysis-progress-container')?.classList.remove('d-none');
+            const pPerc = document.getElementById('progress-percent'), pBar = document.getElementById('analysis-progress-bar');
 
-            // 動画が2つの場合、それぞれの動画で「1人のみ」を抽出するフラグ
-            const onlyOnePerson = v2 !== null;
-
-            poseData1 = await analyzeVideo(v1, "動画1", pPercent, pBar, onlyOnePerson);
+            // --- 動画1解析 (比較用動画があれば1人抽出、なければ全員) ---
+            poseData1 = await analyzeVideo(v1, "動画1", pPerc, pBar, v2 !== null);
+            
+            // --- 動画2解析 (存在する場合) ---
             if (v2) {
                 if (isNaN(v2.duration)) await new Promise(r => v2.onloadedmetadata = r);
-                poseData2 = await analyzeVideo(v2, "動画2", pPercent, pBar, onlyOnePerson);
+                poseData2 = await analyzeVideo(v2, "動画2", pPerc, pBar, true);
                 document.getElementById('downloadCSV2')?.classList.remove('d-none');
-            } else if (poseData1.length > 0 && poseData1[0].poses.length >= 2) {
-                await runDtwScoring(poseData1);
             }
 
-            isAnalyzed = true; toggleBtn.disabled = false;
+            // 採点実行 (1動画内2人 または 2動画間比較)
+            await runComparisonScoring(poseData1, poseData2);
+
+            isAnalyzed = true;
+            toggleBtn.disabled = false;
             resetBtn?.classList.remove('d-none');
             document.getElementById('download-area')?.classList.remove('d-none');
-            document.getElementById('stats-overlay').classList.add('d-none');
+            document.getElementById('stats-overlay')?.classList.add('d-none');
             toggleBtn.innerHTML = '<i class="fa-solid fa-play"></i> 解析表示 ON';
         }
+
+        // 表示の切り替え
         aiActive = !aiActive;
-        toggleBtn.classList.toggle('btn-warning'); toggleBtn.classList.toggle('btn-success');
-        if (aiActive) renderLoop();
+        toggleBtn.classList.toggle('btn-warning');
+        toggleBtn.classList.toggle('btn-success');
+        
+        if (aiActive) {
+            renderLoop();
+        } else {
+            if (animationId) cancelAnimationFrame(animationId);
+        }
     });
 
     async function analyzeVideo(video, label, percentEl, barEl, limitToOne) {
@@ -139,6 +156,7 @@ async function initPoseDetection() {
         for (let t = 0; t <= duration; t += step) {
             video.currentTime = t;
             await new Promise(r => { video.onseeked = r; setTimeout(r, 1000); });
+            
             const prog = Math.min(100, Math.round((t / duration) * 100));
             if (percentEl) percentEl.innerText = `${label}: ${prog}%`;
             if (barEl) barEl.style.width = `${prog}%`;
@@ -147,14 +165,12 @@ async function initPoseDetection() {
             cumulativeMs += 100;
 
             if (res.landmarks) {
-                // ★ 修正ポイント: 比較モード(limitToOne)なら先頭1人のみ保存
-                let posesToSave = JSON.parse(JSON.stringify(res.landmarks));
-                if (limitToOne) posesToSave = posesToSave.slice(0, 1);
-
+                let poses = JSON.parse(JSON.stringify(res.landmarks));
+                if (limitToOne) poses = poses.slice(0, 1);
                 data.push({ 
                     time: t.toFixed(2), 
-                    poses: posesToSave,
-                    normPoses: posesToSave.map(l => getNormalizedPose(l)) 
+                    poses: poses,
+                    normPoses: poses.map(l => getNormalizedPose(l)) 
                 });
             }
         }
@@ -162,30 +178,39 @@ async function initPoseDetection() {
         return data;
     }
 
-    async function runDtwScoring(data) {
-        const dtwRes = await fetch('/analyze/dtw', {
+    async function runComparisonScoring(d1, d2) {
+        const payload = { normPoseData: d1.map(d => ({time: d.time, poses: d.normPoses})) };
+        if (d2 && d2.length > 0) {
+            payload.poseData1 = payload.normPoseData;
+            payload.poseData2 = d2.map(d => ({time: d.time, poses: d.normPoses}));
+        }
+
+        const res = await fetch('/analyze/dtw', {
             method: 'POST', 
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.getElementById('csrf_token').value},
-            body: JSON.stringify({ normPoseData: data.map(d => ({time: d.time, poses: d.normPoses})) })
+            body: JSON.stringify(payload)
         }).then(r => r.json());
 
-        if (dtwRes.dtw_score !== undefined) {
+        if (res.dtw_score !== undefined) {
             document.getElementById('overall-dtw-card')?.classList.remove('d-none');
-            document.getElementById('dtw-score-val').innerText = dtwRes.dtw_score;
-            document.getElementById('dtw-score-bar').style.width = `${dtwRes.dtw_score}%`;
-            document.getElementById('avg-cosine-val').innerText = dtwRes.avg_cosine.toFixed(4);
-            document.getElementById('avg-euclidean-val').innerText = dtwRes.avg_euclidean.toFixed(4);
+            document.getElementById('dtw-score-val').innerText = res.dtw_score;
+            document.getElementById('dtw-score-bar').style.width = `${res.dtw_score}%`;
+            document.getElementById('avg-cosine-val').innerText = res.avg_cosine.toFixed(4);
+            document.getElementById('avg-euclidean-val').innerText = res.avg_euclidean.toFixed(4);
+            const bar = document.getElementById('dtw-score-bar');
+            bar.className = `progress-bar ${res.dtw_score > 80 ? 'bg-success' : (res.dtw_score > 50 ? 'bg-warning' : 'bg-danger')}`;
         }
     }
 
     function renderLoop() {
         if (!aiActive) return;
         const curr = v1.currentTime;
-        const d1 = poseData1.find(d => d.time >= curr);
-        if (d1) drawPoses(c1, d1.poses);
-        if (v2 && c2) {
-            const d2 = poseData2.find(d => d.time >= curr);
-            if (d2) drawPoses(c2, d2.poses);
+        const f1 = poseData1.find(d => d.time >= curr);
+        if (f1) drawPoses(c1, f1.poses);
+        
+        if (v2 && c2 && poseData2.length > 0) {
+            const f2 = poseData2.find(d => d.time >= curr);
+            if (f2) drawPoses(c2, f2.poses);
         }
         animationId = requestAnimationFrame(renderLoop);
     }
@@ -193,9 +218,8 @@ async function initPoseDetection() {
     function drawPoses(canvas, poses) {
         if (!canvas || !poses) return;
         canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d'), du = new DrawingUtils(ctx);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const du = new DrawingUtils(ctx);
         poses.forEach((lm, i) => {
             du.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, {color: i===0?'#00FF00':'#00BFFF', lineWidth: 2});
             du.drawLandmarks(lm, {color: '#FF0000', radius: 2});
@@ -203,19 +227,27 @@ async function initPoseDetection() {
     }
 }
 
-function initVideoSync() {
-    document.querySelectorAll('.comparison-container').forEach(container => {
-        const video1 = container.querySelector('.video-1'), video2 = container.querySelector('.video-2');
-        if (video1 && video2) {
-            video1.addEventListener('play', () => video2.play().catch(()=>{}));
-            video1.addEventListener('pause', () => video2.pause());
-            video1.addEventListener('seeking', () => video2.currentTime = video1.currentTime);
-        }
-    });
+/** CSV保存用 **/
+function downloadAsCSV(data, filename) {
+    if (!data || data.length === 0) return;
+    let csv = "timestamp_sec,person_id,landmark_id,landmark_name,x,y,z\n";
+    data.forEach(frame => frame.poses.forEach((pose, pIdx) => pose.forEach((lm, lmIdx) => {
+        csv += `${frame.time},${pIdx},${lmIdx},${LANDMARK_NAMES[lmIdx]},${lm.x.toFixed(6)},${lm.y.toFixed(6)},${lm.z.toFixed(6)}\n`;
+    })));
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    link.download = filename; link.click();
 }
 
 window.addEventListener('pagehide', window.clearAllAnalysis);
 document.addEventListener('DOMContentLoaded', () => {
-    initVideoSync();
     initPoseDetection();
+    document.querySelectorAll('.comparison-container').forEach(container => {
+        const v1 = container.querySelector('.video-1'), v2 = container.querySelector('.video-2');
+        if (v1 && v2) {
+            v1.addEventListener('play', () => v2.play().catch(()=>{}));
+            v1.addEventListener('pause', () => v2.pause());
+            v1.addEventListener('seeking', () => v2.currentTime = v1.currentTime);
+        }
+    });
 });
