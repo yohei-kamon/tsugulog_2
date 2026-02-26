@@ -1,42 +1,42 @@
-import os, uuid
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+import os
+import uuid
+import numpy as np
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 from PIL import Image
-from models import db, User, Post, Like, Follow, Comment, create_tables
+from fastdtw import fastdtw
+from scipy.spatial.distance import euclidean
+
+from models import db, User, Post, Like, Comment, create_tables
 from forms import RegisterForm, LoginForm, PostForm, CommentForm
-from flask import send_from_directory
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "dev-secret-key"
-app.config["UPLOAD_FOLDER"] = "static/uploads/"
+app.config['SECRET_KEY'] = 'industrial-skill-log'
+app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 
 login_manager = LoginManager(app)
-login_manager.login_view = "login"
-
+login_manager.login_view = 'login'
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.get_or_none(User.id == int(user_id))
 
-
-# --- ここを追加 ---
 @app.context_processor
 def inject_models():
-    # テンプレート内で Like や Post などのクラスを直接参照できるようにする
-    from models import Like, Post
-
     return dict(Like=Like, Post=Post)
 
+@app.after_request
+def add_header(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRFToken'
+    return response
 
-# ------------------
-
-
+# --- ヘルパー ---
 def save_media(file, is_image=True):
     ext = os.path.splitext(file.filename)[1]
     filename = f"{uuid.uuid4()}{ext}"
-    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if is_image:
         img = Image.open(file)
         img.thumbnail((800, 800))
@@ -45,122 +45,133 @@ def save_media(file, is_image=True):
         file.save(path)
     return filename
 
-
-@app.route("/")
-@login_required
-def index():
-    posts = Post.select().order_by(Post.created_at.desc())
-    return render_template("index.html", posts=posts)
-
-
-@app.route("/register", methods=["GET", "POST"])
+# --- 認証 ---
+@app.route('/register', methods=['GET', 'POST'])
 def register():
     form = RegisterForm()
     if form.validate_on_submit():
-        User.create(
-            username=form.username.data,
-            email=form.email.data,
-            password=generate_password_hash(form.password.data),
-        )
-        flash("Registered successfully!")
-        return redirect(url_for("login"))
-    return render_template("register.html", form=form)
+        if User.get_or_none(User.username == form.username.data):
+            flash('このユーザー名は既に使用されています。')
+            return render_template('register.html', form=form)
+        User.create(username=form.username.data, email=form.email.data, password=generate_password_hash(form.password.data))
+        flash('登録完了しました。ログインしてください。')
+        return redirect(url_for('login'))
+    return render_template('register.html', form=form)
 
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.get_or_none(User.username == form.username.data)
         if user and check_password_hash(user.password, form.password.data):
             login_user(user)
-            return redirect(url_for("index"))
-        flash("Invalid credentials")
-    return render_template("login.html", form=form)
+            return redirect(url_for('index'))
+        flash('ユーザー名またはパスワードが正しくありません。')
+    return render_template('login.html', form=form)
 
-
-@app.route("/logout")
+@app.route('/logout')
 def logout():
-    logout_user()
-    return redirect(url_for("login"))
+    logout_user(); return redirect(url_for('login'))
 
+# --- メイン ---
+@app.route('/')
+@login_required
+def index():
+    posts = Post.select().order_by(Post.created_at.desc())
+    return render_template('index.html', posts=posts)
 
-@app.route("/post/new", methods=["GET", "POST"])
+@app.route('/post/new', methods=['GET', 'POST'])
 @login_required
 def create_post():
     form = PostForm()
     if form.validate_on_submit():
-        is_img = form.content_type.data == "photo"
-        file1 = save_media(request.files["file1"], is_image=is_img)
-        file2 = None
-        if request.files.get("file2"):
-            file2 = save_media(request.files["file2"], is_image=is_img)
-
+        is_img = form.content_type.data == 'photo'
+        f1 = save_media(request.files['file1'], is_image=is_img)
+        f2 = save_media(request.files['file2'], is_image=is_img) if request.files.get('file2') else None
         Post.create(
-            user=current_user,
-            content_type=form.content_type.data,
-            file_path=file1,
-            file_path_2=file2,
-            caption=form.caption.data,
-            caption_2=form.caption_2.data,  # 追加
-            caption_3=form.caption_3.data,  # 追加
-            caption_4=form.caption_4.data,  # 追加
-            is_comparison=form.is_comparison.data,
+            user=current_user, content_type=form.content_type.data, file_path=f1, file_path_2=f2,
+            caption=form.caption.data, caption_2=form.caption_2.data,
+            caption_3=form.caption_3.data, caption_4=form.caption_4.data,
+            is_comparison=form.is_comparison.data
         )
-        return redirect(url_for("index"))
-    return render_template("post.html", form=form)
+        return redirect(url_for('index'))
+    return render_template('post.html', form=form)
 
+@app.route('/post/<int:post_id>', methods=['GET', 'POST'])
+@login_required
+def post_detail(post_id):
+    post = Post.get_or_none(Post.id == post_id)
+    if not post: return redirect(url_for('index'))
+    form = CommentForm()
+    if form.validate_on_submit():
+        Comment.create(user=current_user, post=post, content=form.content.data)
+        return redirect(url_for('post_detail', post_id=post.id))
+    comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
+    return render_template('detail.html', post=post, form=form, comments=comments)
 
-@app.route("/like/<int:post_id>", methods=["POST"])
+# --- DTW 採点エンジン ---
+@app.route('/analyze/dtw', methods=['POST'])
+@login_required
+def analyze_dtw():
+    # normPoseData (正規化済みデータ) を受け取る
+    json_data = request.json.get('normPoseData')
+    if not json_data or len(json_data) < 5:
+        return jsonify({'error': 'Insufficient data'}), 400
+
+    def extract_series(p_idx):
+        series = []
+        for frame in json_data:
+            if len(frame['poses']) > p_idx:
+                lm = frame['poses'][p_idx]
+                joints = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]
+                vec = []
+                for j in joints: vec.extend([lm[j]['x'], lm[j]['y']])
+                series.append(vec)
+        return np.array(series)
+
+    s1 = extract_series(0)
+    s2 = extract_series(1)
+    if len(s1) == 0 or len(s2) == 0:
+        return jsonify({'error': '2人検出されませんでした'}), 400
+
+    # DTW実行（時間軸補正された最短距離パスを算出）
+    distance, path = fastdtw(s1, s2, dist=euclidean)
+
+    cos_list = []
+    euc_list = []
+    for (idx1, idx2) in path:
+        v1, v2 = s1[idx1], s2[idx2]
+        euc_list.append(euclidean(v1, v2))
+        n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+        if n1 > 0 and n2 > 0:
+            cos_list.append(np.dot(v1, v2) / (n1 * n2))
+
+    avg_cos = np.mean(cos_list) if cos_list else 0
+    avg_euc = np.mean(euc_list) if euc_list else 1.0
+    
+    # 採点計算
+    form_score = max(0, (avg_cos - 0.8) / (1.0 - 0.8)) * 100
+    pos_score = max(0, 100 * (1 - (avg_euc / 0.2)))
+    total_score = (form_score * 0.6) + (pos_score * 0.4)
+    
+    if avg_euc < 0.01 and avg_cos > 0.995: total_score = 100.0
+
+    return jsonify({
+        'dtw_score': round(total_score, 1),
+        'avg_cosine': round(avg_cos, 4),
+        'avg_euclidean': round(avg_euc, 4),
+        'feedback': "時間軸のズレを補正し、動作の「型」と「位置」を採点しました。"
+    })
+
+@app.route('/like/<int:post_id>', methods=['POST'])
 @login_required
 def toggle_like(post_id):
     post = Post.get_by_id(post_id)
     like, created = Like.get_or_create(user=current_user, post=post)
-    if not created:
-        like.delete_instance()
-    return jsonify({"liked": created, "count": post.likes.count()})
+    if not created: like.delete_instance()
+    return jsonify({'liked': created, 'count': post.likes.count()})
 
-
-# --- 既存のルートのあとに追加 ---
-
-
-@app.route("/post/<int:post_id>", methods=["GET", "POST"])
-@login_required
-def post_detail(post_id):
-    post = Post.get_or_none(Post.id == post_id)
-    if not post:
-        flash("Post not found.")
-        return redirect(url_for("index"))
-
-    form = CommentForm()
-    if form.validate_on_submit():
-        Comment.create(user=current_user, post=post, content=form.content.data)
-        return redirect(url_for("post_detail", post_id=post.id))
-
-    # コメント一覧を取得
-    comments = Comment.select().where(Comment.post == post).order_by(Comment.created_at.asc())
-
-    return render_template("detail.html", post=post, form=form, comments=comments)
-
-
-# 既存のルートのあたりに追加、または修正
-@app.after_request
-def add_header(response):
-    # すべてのオリジンからのアクセスを許可（AI解析に必要）
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
-
-
-# staticファイルを返す際にCORSを付与する設定
-@app.route("/static/uploads/<path:filename>")
-def uploaded_file(filename):
-    response = send_from_directory(app.config["UPLOAD_FOLDER"], filename)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
-
-
-if __name__ == "__main__":
-    if not os.path.exists(app.config["UPLOAD_FOLDER"]):
-        os.makedirs(app.config["UPLOAD_FOLDER"])
+if __name__ == '__main__':
+    if not os.path.exists(app.config['UPLOAD_FOLDER']): os.makedirs(app.config['UPLOAD_FOLDER'])
     create_tables()
     app.run(port=8000, debug=True)
